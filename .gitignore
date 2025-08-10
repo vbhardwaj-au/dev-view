@@ -1,0 +1,67 @@
+# .NET & C#
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.vs/
+*.vscode/
+
+# Build results
+*.dll
+*.exe
+*.app
+*.log
+*.pdb
+*.cache
+*.mdb
+*.dbmdl
+*.dbmdl
+*.bak
+*.backup
+**/publish/
+autosync_publish/
+autosync.zip
+
+# SQL
+*.mdf
+*.ldf
+*.ndf
+
+# Rider
+.idea/
+*.sln.iml
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Test results
+TestResults/
+
+# Others
+*.ncrunch*
+_ReSharper*/
+*.[Rr]e[Ss]harper*
+*.DotSettings.user
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Local config
+appsettings.Development.json
+appsettings.Local.json
+appsettings.json
+secrets.json
+launchSettings.json
+
+# Cursor
+.cursor/ PasswordHasher/
+HashGenerator/

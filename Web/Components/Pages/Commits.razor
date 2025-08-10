@@ -1,0 +1,776 @@
+@attribute [Authorize]
+@page "/commits"
+@page "/user/{UserId:int}/commits"
+@using Web.Services
+@using System.Net.Http.Json
+@using Radzen
+@using Radzen.Blazor
+@using Web.Components.Common
+@using Entities.DTOs.Teams
+
+@using Microsoft.AspNetCore.WebUtilities
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject WorkspaceService WorkspaceService
+@inject NavigationManager Navigation
+@inject ILogger<Commits> Logger
+@inject BitbucketUrlService BitbucketUrlService
+@rendermode InteractiveServer
+
+<PageTitle>Repository Commits - DevView</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <h1 class="mb-0">
+                    <i class="bi bi-git"></i> 
+                    @if (UserId.HasValue && selectedUser != null)
+                    {
+                        <span>Commits by @selectedUser.DisplayName</span>
+                    }
+                    else
+                    {
+                        <span>Commits</span>
+                    }
+                </h1>
+                @if (showBackButton)
+                {
+                    <button class="btn btn-outline-secondary" @onclick="NavigateBack">
+                        <i class="bi bi-arrow-left me-2"></i>Back to User Dashboard
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (!WorkspaceService.HasSelectedWorkspace)
+    {
+        <div class="alert alert-warning" role="alert">
+            <h4 class="alert-heading">Workspace Not Configured</h4>
+            <p>Please select a workspace in Settings to view commit statistics.</p>
+            <hr>
+            <button class="btn btn-primary" @onclick="NavigateToSettings">
+                <i class="bi bi-gear-fill me-2"></i>Go to Settings
+            </button>
+        </div>
+    }
+    else
+    {
+        <CommitsFilter 
+            IsLoadingRepos="@isLoadingRepos"
+            Repositories="@repositories"
+            SelectedRepoSlug="@selectedRepoSlug"
+            IsLoadingUsers="@isLoadingUsers"
+            Users="@users"
+            SelectedUserId="@selectedUserId"
+            IsLoadingTeams="@isLoadingTeams"
+            Teams="@teams"
+            SelectedTeamId="@selectedTeamId"
+            FilterType="@filterType"
+            StartDate="@startDate"
+            EndDate="@endDate"
+            IncludePR="@includePR"
+            IncludeData="@includeData"
+            IncludeConfig="@includeConfig"
+            GroupBy="@groupBy"
+            ShowGrouping="true"
+            ShowExcluded="@showExcluded"
+            IsSearching="@isLoadingCommits"
+            OnRepositorySelected="OnRepositorySelected"
+            OnUserSelected="OnUserSelected"
+            OnTeamSelected="OnTeamSelected"
+            OnFilterTypeChanged="OnFilterTypeChanged"
+            OnDateRangeUpdated="EventCallback.Factory.Create<(DateTime? newStartDate, DateTime? newEndDate)>(this, OnDateRangeUpdated)"
+            OnFiltersChanged="OnFiltersChanged"
+            OnGroupingUpdated="OnGroupingUpdated"
+            OnShowExcludedChanged="OnShowExcludedChanged"
+            OnSearchButtonClicked="OnSearchButtonClicked" />
+            
+        @if (UserId.HasValue && selectedUser != null)
+        {
+            <div class="alert alert-info mb-3">
+                <i class="bi bi-person-circle me-2"></i>
+                <strong>Filtered by user:</strong> @selectedUser.DisplayName
+                @if (!string.IsNullOrEmpty(selectedUser.BitbucketUserId))
+                {
+                    <span class="text-muted">(@selectedUser.BitbucketUserId)</span>
+                }
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert @(errorMessage.StartsWith("Note:") ? "alert-info" : "alert-danger") alert-dismissible fade show" role="alert">
+                @errorMessage
+                <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+            </div>
+        }
+
+        <!-- Commit Activity Chart -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <CommitActivityChart 
+                    Data="@commitActivity"
+                    Title="@($"Commit Activity Over Time ({groupBy})")"
+                    ChartId="commitsPageChart"
+                    GroupBy="@groupBy"
+                    RepositoryInfo="@GetRepositoryInfo()"
+                    IsLoading="@isLoadingCommitActivity" />
+            </div>
+        </div>
+
+        @if (isLoadingCommits)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span>Loading commit data...</span>
+                </div>
+            </RadzenAlert>
+        }
+        else if (commits != null && commits.Any())
+        {
+            <CommitSummary PaginatedCommitsResponse="@paginatedCommitsResponse" />
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-clock-history me-2"></i>
+                        Commit History
+                        @if (selectedRepoSlug == null)
+                        {
+                            <span class="text-muted">- All Repositories</span>
+                        }
+                        else
+                        {
+                            var selectedRepo = repositories?.FirstOrDefault(r => r.Slug == selectedRepoSlug);
+                            <span class="text-muted">- @(selectedRepo?.Name ?? selectedRepoSlug)</span>
+                        }
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th></th> <!-- New column for edit icon -->
+                                    <th>Commit</th>
+                                    <th>Repository</th>
+                                    <th>Author</th>
+                                    <th>Date Time</th>
+                                    <th>Total Lines</th>
+                                    <th class="text-success">Code ++</th>
+                                    <th class="text-danger">Code --</th>
+                                    <th class="text-success">Data ++</th>
+                                    <th class="text-danger">Data --</th>
+                                    <th class="text-success">Config ++</th>
+                                    <th class="text-danger">Config --</th>
+                                    <th style="width: 200px">Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var commit in commits)
+                                {
+                                    var totalAdded = commit.LinesAdded;
+                                    var totalRemoved = commit.LinesRemoved;
+                                    
+                                    <tr>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ShowCommitFilesModal(commit.Hash)">
+                                                <i class="bi bi-pencil-fill"></i>
+                                            </button>
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(commit.RepositorySlug))
+                                            {
+                                                <a @onclick="async (e) => await OpenBitbucketCommit(commit.Hash, commit.RepositorySlug, e)" @onclick:preventDefault style="cursor:pointer; text-decoration:underline; color:var(--bs-link-color);">
+                                                    @commit.Hash[..7]
+                                                </a>
+                                            }
+                                            else
+                                            {
+                                                <span title="Repository information not available for this commit.">
+                                                    @commit.Hash[..7]
+                                                </span>
+                                            }
+                                        </td>
+                                        <td>@commit.RepositoryName</td>
+                                        <td>@commit.AuthorName</td>
+                                        <td>@commit.Date.ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td>
+                                            <span class="text-success">+@totalAdded</span>
+                                            @if (totalRemoved > 0)
+                                            {
+                                                <span class="text-danger">-@totalRemoved</span>
+                                            }
+                                        </td>
+                                        <td class="text-success">@(commit.CodeLinesAdded > 0 ? $"+{commit.CodeLinesAdded}" : "")</td>
+                                        <td class="text-danger">@(commit.CodeLinesRemoved > 0 ? $"-{commit.CodeLinesRemoved}" : "")</td>
+                                        <td class="text-success">@(commit.DataLinesAdded > 0 ? $"+{commit.DataLinesAdded}" : "")</td>
+                                        <td class="text-danger">@(commit.DataLinesRemoved > 0 ? $"-{commit.DataLinesRemoved}" : "")</td>
+                                        <td class="text-success">@(commit.ConfigLinesAdded > 0 ? $"+{commit.ConfigLinesAdded}" : "")</td>
+                                        <td class="text-danger">@(commit.ConfigLinesRemoved > 0 ? $"-{commit.ConfigLinesRemoved}" : "")</td>
+                                        <td>
+                                            @if (commit.IsPRMergeCommit)
+                                            {
+                                                <span class="badge bg-primary me-2">PR</span>
+                                            }
+                                            <span title="@commit.Message" style="cursor: pointer" @onclick="() => ShowFullMessage(commit.Message)">
+                                                @(commit.Message.Length > 50 ? commit.Message[..50] + "..." : commit.Message)
+                                            </span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (totalPages > 1)
+                    {
+                        <div class="d-flex justify-content-center mt-3">
+                            <nav>
+                                <ul class="pagination">
+                                    <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                                        <button class="page-link" @onclick="() => GoToPage(currentPage - 1)" disabled="@(currentPage == 1)">Previous</button>
+                                    </li>
+                                    @for (int i = 1; i <= totalPages; i++)
+                                    {
+                                        var pageNumber = i;
+                                        <li class="page-item @(pageNumber == currentPage ? "active" : "")">
+                                            <button class="page-link" @onclick="() => GoToPage(pageNumber)">@pageNumber</button>
+                                        </li>
+                                    }
+                                    <li class="page-item @(currentPage == totalPages ? "disabled" : "")">
+                                        <button class="page-link" @onclick="() => GoToPage(currentPage + 1)" disabled="@(currentPage == totalPages)">Next</button>
+                                    </li>
+                                </ul>
+                            </nav>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                No commits found for the selected criteria.
+            </div>
+        }
+    }
+</div>
+
+@if (showMessageModal)
+{
+    <div class="modal show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Commit Message</h5>
+                    <button type="button" class="btn-close" @onclick="CloseMessageModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p style="white-space: pre-wrap;">@selectedMessage</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseMessageModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<CommitFilesModal
+    IsOpen="@showCommitFilesModal"
+    IsOpenChanged="@OnCommitFilesModalChanged"
+    CommitHash="@(selectedCommitHashForModal ?? string.Empty)" />
+
+@code {
+    [Parameter]
+    public int? UserId { get; set; }
+    
+    [Parameter]
+    [SupplyParameterFromQuery]
+    public string? StartDate { get; set; }
+    
+    [Parameter]
+    [SupplyParameterFromQuery]
+    public string? EndDate { get; set; }
+    
+    [Parameter]
+    [SupplyParameterFromQuery]
+    public string? RepoSlug { get; set; }
+    
+    private IEnumerable<RepositorySummaryDto>? repositories;
+    private IEnumerable<UserDto>? users;
+    private PaginatedCommitsResponse? paginatedCommitsResponse;
+    private List<CommitListItemDto> commits = new();
+    private bool isLoadingRepos = true;
+    private bool isLoadingUsers = true;
+    private bool isLoadingCommits = false;
+    private string? selectedRepoSlug;
+    private int? selectedUserId;
+    private DateTime? startDate = DateTime.Today.AddDays(-7);
+    private DateTime? endDate = DateTime.Today;
+    private bool includePR = false;
+    private bool includeData = false;
+    private bool includeConfig = false;
+    private string groupBy = "Day";
+    private string? errorMessage;
+    private int currentPage = 1;
+    private int totalPages = 1;
+    private int pageSize = 25;
+    private string? selectedMessage;
+    private bool showMessageModal;
+    private bool showCommitFilesModal = false;
+    private string? selectedCommitHashForModal;
+    private bool showExcluded = false;
+    private bool showBackButton = false;
+    private string? referrerPage;
+    private Dictionary<string, string> originalQueryParams = new();
+    
+    // Chart data
+    private CommitActivityDto[]? commitActivity;
+    private bool isLoadingCommitActivity = false;
+    
+    // Team filtering variables
+    private bool isLoadingTeams = false;
+    private IEnumerable<TeamSummaryDto>? teams;
+    private int? selectedTeamId;
+    private string filterType = "user";
+    
+    // User data for display
+    private UserDto? selectedUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Parse query parameters from URL
+        ParseQueryParameters();
+        
+        // Handle UserId parameter if provided
+        if (UserId.HasValue)
+        {
+            selectedUserId = UserId.Value;
+            filterType = "user";
+        }
+        
+        // Handle query parameters for date range
+        if (!string.IsNullOrEmpty(StartDate) && DateTime.TryParse(StartDate, out var startDateParsed))
+        {
+            startDate = startDateParsed;
+        }
+        
+        if (!string.IsNullOrEmpty(EndDate) && DateTime.TryParse(EndDate, out var endDateParsed))
+        {
+            endDate = endDateParsed;
+        }
+        
+        if (!string.IsNullOrEmpty(RepoSlug))
+        {
+            selectedRepoSlug = RepoSlug;
+        }
+        
+        await LoadRepositories();
+        await LoadUsers();
+        await LoadTeams();
+        await LoadUser();
+        await LoadCommits();
+        await LoadCommitActivity();
+    }
+
+    private void ParseQueryParameters()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var queryParams = QueryHelpers.ParseQuery(uri.Query);
+
+        // Store all original query parameters for back navigation
+        foreach (var param in queryParams)
+        {
+            originalQueryParams[param.Key] = param.Value.ToString();
+        }
+
+        // Check if we came from user dashboard
+        if (queryParams.TryGetValue("referrer", out var referrer))
+        {
+            referrerPage = referrer;
+            showBackButton = referrer == "userdashboard";
+        }
+
+        // Apply filters from query parameters
+        if (queryParams.TryGetValue("userId", out var userIdStr) && int.TryParse(userIdStr, out var userId))
+        {
+            selectedUserId = userId;
+        }
+
+        if (queryParams.TryGetValue("repoSlug", out var repoSlug))
+        {
+            selectedRepoSlug = repoSlug;
+        }
+
+        if (queryParams.TryGetValue("startDate", out var startDateStr) && DateTime.TryParse(startDateStr, out var startDateParsed))
+        {
+            startDate = startDateParsed;
+        }
+
+        if (queryParams.TryGetValue("endDate", out var endDateStr) && DateTime.TryParse(endDateStr, out var endDateParsed))
+        {
+            endDate = endDateParsed;
+        }
+
+        if (queryParams.TryGetValue("includePR", out var includePRStr) && bool.TryParse(includePRStr, out var includePRParsed))
+        {
+            includePR = includePRParsed;
+        }
+
+        if (queryParams.TryGetValue("showExcluded", out var showExcludedStr) && bool.TryParse(showExcludedStr, out var showExcludedParsed))
+        {
+            showExcluded = showExcludedParsed;
+        }
+    }
+
+    private async Task LoadRepositories()
+    {
+        try
+        {
+            isLoadingRepos = true;
+        repositories = await Http.GetFromJsonAsync<IEnumerable<RepositorySummaryDto>>("api/analytics/repositories");
+        if (repositories != null)
+        {
+            repositories = repositories.Where(r => !r.ExcludeFromReporting).ToArray();
+        }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading repositories: {ex.Message}";
+            Logger.LogError(ex, "Error loading repositories");
+        }
+        finally
+        {
+            isLoadingRepos = false;
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            isLoadingUsers = true;
+            users = await Http.GetFromJsonAsync<IEnumerable<UserDto>>("/api/analytics/users");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading users: {ex.Message}";
+            Logger.LogError(ex, "Error loading users");
+        }
+        finally
+        {
+            isLoadingUsers = false;
+        }
+    }
+
+    private async Task LoadTeams()
+    {
+        try
+        {
+            isLoadingTeams = true;
+            teams = await Http.GetFromJsonAsync<IEnumerable<TeamSummaryDto>>("/api/analytics/teams");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading teams: {ex.Message}";
+            Logger.LogError(ex, "Error loading teams");
+        }
+        finally
+        {
+            isLoadingTeams = false;
+        }
+    }
+
+    private async Task LoadUser()
+    {
+        if (UserId.HasValue)
+        {
+            try
+            {
+                var users = await Http.GetFromJsonAsync<List<UserDto>>("/api/analytics/users") ?? new();
+                selectedUser = users.FirstOrDefault(u => u.Id == UserId.Value);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading user: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task LoadCommits()
+    {
+        try
+        {
+            isLoadingCommits = true;
+            errorMessage = null;
+
+            // Default to "all" if no repository is selected
+            var repoSlug = string.IsNullOrEmpty(selectedRepoSlug) ? "all" : selectedRepoSlug;
+            
+            var url = $"api/commits/{repoSlug}?page={currentPage}&pageSize={pageSize}&includePR={includePR.ToString().ToLower()}";
+            if (startDate.HasValue) url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            if (endDate.HasValue) url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            
+            // Add user/team filtering
+            if (filterType == "user" && selectedUserId.HasValue) url += $"&userId={selectedUserId.Value}";
+            if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1) url += $"&teamId={selectedTeamId.Value}";
+            
+            if (showExcluded) url += "&showExcluded=true";
+
+            paginatedCommitsResponse = await Http.GetFromJsonAsync<PaginatedCommitsResponse>(url);
+            if (paginatedCommitsResponse != null)
+            {
+                commits = paginatedCommitsResponse.Commits;
+                totalPages = paginatedCommitsResponse.TotalPages;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading commits: {ex.Message}";
+            Logger.LogError(ex, "Error loading commits");
+            commits = new();
+            totalPages = 1;
+        }
+        finally
+        {
+            isLoadingCommits = false;
+        }
+    }
+
+    private async Task LoadCommitActivity()
+    {
+        try
+        {
+            isLoadingCommitActivity = true;
+            
+            if (!WorkspaceService.HasSelectedWorkspace)
+            {
+                return;
+            }
+
+            var url = $"api/analytics/commits/activity?workspace={WorkspaceService.SelectedWorkspace}&groupBy={groupBy}";
+            
+            // Apply the same filters as the commit list
+            if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "all")
+            {
+                url += $"&repoSlug={selectedRepoSlug}";
+            }
+            if (startDate.HasValue) url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            if (endDate.HasValue) url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            
+            // Add user/team filtering
+            if (filterType == "user" && selectedUserId.HasValue) url += $"&userId={selectedUserId.Value}";
+            if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1) url += $"&teamId={selectedTeamId.Value}";
+            
+            url += $"&includePR={includePR.ToString().ToLower()}";
+            url += $"&includeData={includeData.ToString().ToLower()}";
+            url += $"&includeConfig={includeConfig.ToString().ToLower()}";
+            if (showExcluded) url += "&showExcluded=true";
+
+            commitActivity = await Http.GetFromJsonAsync<CommitActivityDto[]>(url);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading commit activity: {ex.Message}";
+            Logger.LogError(ex, "Error loading commit activity");
+        }
+        finally
+        {
+            isLoadingCommitActivity = false;
+        }
+    }
+
+    private async Task OnRepositorySelected(string? slug)
+    {
+        selectedRepoSlug = slug;
+        currentPage = 1;
+    }
+
+    private async Task OnUserSelected(int? userId)
+    {
+        selectedUserId = userId;
+        currentPage = 1;
+        
+        // Update selectedUser when user is selected from dropdown
+        if (userId.HasValue)
+        {
+            selectedUser = users?.FirstOrDefault(u => u.Id == userId.Value);
+        }
+        else
+        {
+            selectedUser = null;
+        }
+    }
+
+    private async Task OnTeamSelected(int? teamId)
+    {
+        selectedTeamId = teamId;
+        currentPage = 1;
+    }
+
+    private async Task OnFilterTypeChanged(string newFilterType)
+    {
+        filterType = newFilterType;
+        // Clear the opposite filter when switching
+        if (filterType == "user")
+        {
+            selectedTeamId = null;
+        }
+        else if (filterType == "team")
+        {
+            selectedUserId = null;
+            selectedUser = null; // Clear selected user when switching to team filter
+        }
+        currentPage = 1;
+    }
+
+    private async Task OnDateRangeUpdated((DateTime? newStartDate, DateTime? newEndDate) dateRange)
+    {
+        startDate = dateRange.newStartDate;
+        endDate = dateRange.newEndDate;  // This now receives the adjusted end date (23:59:59) from CommitsFilter
+        currentPage = 1;
+    }
+
+    private async Task OnGroupingUpdated(string? newGrouping)
+    {
+        groupBy = newGrouping ?? "Day";
+        // Note: We don't reset currentPage here because grouping only affects the chart, not the table
+    }
+
+    private async Task OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
+    {
+        this.includePR = filters.includePR;
+        this.includeData = filters.includeData;
+        this.includeConfig = filters.includeConfig;
+        currentPage = 1;
+    }
+
+    private async Task OnShowExcludedChanged(bool value)
+    {
+        showExcluded = value;
+    }
+
+    private async Task OnSearchButtonClicked()
+    {
+        await LoadCommits();
+        await LoadCommitActivity();
+    }
+
+    private string GetRepositoryInfo()
+    {
+        if (selectedRepoSlug == null || selectedRepoSlug == "all")
+        {
+            return "All Repositories";
+        }
+        else
+        {
+            var selectedRepo = repositories?.FirstOrDefault(r => r.Slug == selectedRepoSlug);
+            return selectedRepo?.Name ?? selectedRepoSlug;
+        }
+    }
+
+    private async Task GoToPage(int page)
+    {
+        if (page < 1 || page > totalPages) return;
+        currentPage = page;
+        await LoadCommits();
+    }
+
+    private async Task OpenBitbucketCommit(string hash, string? commitRepoSlug = null, MouseEventArgs? e = null)
+    {
+        var workspace = WorkspaceService.SelectedWorkspace;
+        if (string.IsNullOrEmpty(workspace))
+        {
+            errorMessage = "Workspace not configured. Please select a workspace in Settings.";
+            return;
+        }
+
+        // Use the commit's own repository slug if available, otherwise fall back to selectedRepoSlug
+        var repoToUse = commitRepoSlug ?? selectedRepoSlug;
+
+        if (string.IsNullOrEmpty(repoToUse) || repoToUse == "all")
+        {
+            errorMessage = "Cannot open Bitbucket link: A specific repository is required.";
+            return;
+        }
+
+        // Use the new service to compose the URL
+        var url = BitbucketUrlService.GetCommitUrl(workspace, repoToUse, hash);
+        await JSRuntime.InvokeVoidAsync("window.open", url, "_blank"); // Open in new tab
+    }
+
+    private void ShowFullMessage(string message)
+    {
+        selectedMessage = message;
+        showMessageModal = true;
+    }
+
+    private void CloseMessageModal()
+    {
+        showMessageModal = false;
+        selectedMessage = null;
+    }
+
+    private void ShowCommitFilesModal(string commitHash)
+    {
+        selectedCommitHashForModal = commitHash;
+        showCommitFilesModal = true;
+    }
+
+    private void CloseCommitFilesModal()
+    {
+        showCommitFilesModal = false;
+        selectedCommitHashForModal = null;
+    }
+
+    private async Task OnCommitFilesModalChanged(bool isOpen)
+    {
+        showCommitFilesModal = isOpen;
+        if (!isOpen)
+        {
+            await LoadCommits();
+        }
+    }
+
+    private void NavigateToSettings()
+    {
+        Navigation.NavigateTo("admin/settings");
+    }
+
+    private void NavigateBack()
+    {
+        if (referrerPage == "userdashboard")
+        {
+            var url = "/user-dashboard";
+            var queryParams = new List<string>();
+
+            // Reconstruct the original filters, excluding the referrer and userId
+            foreach (var param in originalQueryParams)
+            {
+                if (param.Key != "referrer" && param.Key != "userId")
+                {
+                    queryParams.Add($"{param.Key}={param.Value}");
+                }
+            }
+
+            if (queryParams.Any())
+            {
+                url += "?" + string.Join("&", queryParams);
+            }
+
+            Navigation.NavigateTo(url);
+        }
+        else
+        {
+            // Fallback to user dashboard without parameters
+            Navigation.NavigateTo("/user-dashboard");
+        }
+    }
+} 

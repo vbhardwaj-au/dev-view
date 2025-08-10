@@ -1,0 +1,129 @@
+@using Web.Services
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">DevView</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="text-light small">
+                            <i class="bi bi-person-circle"></i> @context.User.Identity?.Name
+                        </div>
+                        <button class="btn btn-sm btn-outline-light btn-sm py-0 px-2" @onclick="HandleLogout" style="font-size: 0.8rem;">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+                <hr class="text-light my-2" />
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="login">
+                        <span class="bi bi-box-arrow-in-right" aria-hidden="true"></span> Login
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+        
+        <!-- Only show menu items when authenticated -->
+        <AuthorizeView>
+            <Authorized>
+                <!-- Dashboards Section -->
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                        <span class="bi bi-bar-chart-fill" aria-hidden="true"></span> Dashboard
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="user-dashboard">
+                        <span class="bi bi-speedometer2" aria-hidden="true"></span> Commits Dashboard
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="pr-dashboard">
+                        <span class="bi bi-graph-up" aria-hidden="true"></span> PR Dashboard
+                    </NavLink>
+                </div>
+
+                <hr class="text-light my-2" />
+
+                <!-- Data Views Section -->
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="commits">
+                        <span class="bi bi-git" aria-hidden="true"></span> Commits
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="pull-requests">
+                        <span class="bi bi-diagram-2" aria-hidden="true"></span> Pull Requests
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="top-committers">
+                        <span class="bi bi-trophy" aria-hidden="true"></span> Top Committers
+                    </NavLink>
+                </div>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="teams">
+                        <span class="bi bi-people-fill" aria-hidden="true"></span> Teams
+                    </NavLink>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+
+        <!-- Admin Section - Only visible to Admin role -->
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <div class="nav-item px-3">
+                    <div class="nav-link dropdown-toggle" data-bs-toggle="collapse" data-bs-target="#adminSubmenu" aria-expanded="false" aria-controls="adminSubmenu" style="cursor: pointer;">
+                        <span class="bi bi-gear-fill" aria-hidden="true"></span> Admin
+                    </div>
+                    <div class="collapse" id="adminSubmenu">
+                        <div class="nav-item ps-4">
+                            <NavLink class="nav-link" href="admin/repositories">
+                                <span class="bi bi-folder-fill" aria-hidden="true"></span> Repositories
+                            </NavLink>
+                        </div>
+                        <div class="nav-item ps-4">
+                            <NavLink class="nav-link" href="admin/users">
+                                <span class="bi bi-people-fill" aria-hidden="true"></span> Bitbucket Users
+                            </NavLink>
+                        </div>
+                        <div class="nav-item ps-4">
+                            <NavLink class="nav-link" href="admin/user-management">
+                                <span class="bi bi-person-gear" aria-hidden="true"></span> User Management
+                            </NavLink>
+                        </div>
+                        <div class="nav-item ps-4">
+                            <NavLink class="nav-link" href="admin/settings">
+                                <span class="bi bi-sliders" aria-hidden="true"></span> Settings
+                            </NavLink>
+                        </div>
+                    </div>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private async Task HandleLogout()
+    {
+        await Auth.LogoutAsync();
+    }
+}

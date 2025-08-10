@@ -1,0 +1,65 @@
+
+
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="alert alert-light border">
+            <div class="row text-center align-items-center">
+                <div class="col-md-2">
+                    <h5 class="mb-1">@PaginatedCommitsResponse.TotalCommitsCount</h5>
+                    <small class="text-muted">Commits</small>
+                </div>
+                <div class="col-md-2">
+                    <h5 class="mb-1">
+                        <span class="text-success">@string.Format("+{0}", CodeLinesAdded)</span>
+                        <span class="mx-1">|</span>
+                        <span class="text-danger">@string.Format("-{0}", CodeLinesRemoved)</span>
+                    </h5>
+                    <small class="text-muted">Code</small>
+                </div>
+                <div class="col-md-2">
+                    @{ var netChange = CodeLinesAdded - CodeLinesRemoved; }
+                    <h5 class="mb-1 @(netChange >= 0 ? "text-success" : "text-danger")">@(netChange >= 0 ? "+" : "")@netChange</h5>
+                    <small class="text-muted">Net</small>
+                </div>
+                <div class="col-md-2">
+                    <h5 class="mb-1">
+                        <span class="text-success">@string.Format("+{0}", TotalLinesAdded)</span>
+                        <span class="mx-1">|</span>
+                        <span class="text-danger">@string.Format("-{0}", TotalLinesRemoved)</span>
+                    </h5>
+                    <small class="text-muted">Total</small>
+                </div>
+                <div class="col-md-2">
+                    <h5 class="mb-1">
+                        <span class="text-success">@string.Format("+{0}", DataLinesAdded)</span>
+                        <span class="mx-1">|</span>
+                        <span class="text-danger">@string.Format("-{0}", DataLinesRemoved)</span>
+                    </h5>
+                    <small class="text-muted">Data</small>
+                </div>
+                <div class="col-md-2">
+                    <h5 class="mb-1">
+                        <span class="text-success">@string.Format("+{0}", ConfigLinesAdded)</span>
+                        <span class="mx-1">|</span>
+                        <span class="text-danger">@string.Format("-{0}", ConfigLinesRemoved)</span>
+                    </h5>
+                    <small class="text-muted">Config</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public PaginatedCommitsResponse PaginatedCommitsResponse { get; set; } = new();
+
+    private int TotalLinesAdded => PaginatedCommitsResponse.AggregatedLinesAdded;
+    private int TotalLinesRemoved => PaginatedCommitsResponse.AggregatedLinesRemoved;
+    private int CodeLinesAdded => PaginatedCommitsResponse.AggregatedCodeLinesAdded;
+    private int CodeLinesRemoved => PaginatedCommitsResponse.AggregatedCodeLinesRemoved;
+    private int DataLinesAdded => PaginatedCommitsResponse.AggregatedDataLinesAdded;
+    private int DataLinesRemoved => PaginatedCommitsResponse.AggregatedDataLinesRemoved;
+    private int ConfigLinesAdded => PaginatedCommitsResponse.AggregatedConfigLinesAdded;
+    private int ConfigLinesRemoved => PaginatedCommitsResponse.AggregatedConfigLinesRemoved;
+} 

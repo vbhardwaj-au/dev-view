@@ -1,0 +1,114 @@
+@using System.Text
+@using System.Text.Json
+@using Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthService Auth
+@inject IJSRuntime JS
+@inject ILogger<AuthInitializer> Logger
+@inject AuthenticationStateProvider AuthStateProvider
+
+@code {
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                // Check if we have a stored token
+                var hasToken = await JS.InvokeAsync<bool>("authHelper.hasToken");
+                if (hasToken)
+                {
+                    var token = await JS.InvokeAsync<string>("authHelper.getToken");
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        Logger.LogInformation("Restoring authentication from stored token");
+                        
+                        // Parse the JWT token to get claims
+                        var (name, roles) = ParseJwtToken(token);
+                        
+                        // Restore the authentication state
+                        BearerHandler.Token = token;
+                        
+                        if (AuthStateProvider is JwtAuthStateProvider jwt)
+                        {
+                            await jwt.SetUserAsync(name, roles, token);
+                            Logger.LogInformation("Authentication state restored for user: {User}", name);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to restore authentication state");
+            }
+        }
+    }
+
+    private (string name, string[] roles) ParseJwtToken(string token)
+    {
+        try
+        {
+            var parts = token.Split('.');
+            if (parts.Length != 3)
+                return ("", Array.Empty<string>());
+
+            var payload = parts[1];
+            var jsonBytes = ParseBase64WithoutPadding(payload);
+            var json = Encoding.UTF8.GetString(jsonBytes);
+            
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            
+            var name = root.TryGetProperty("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name", out var nameElement) 
+                ? nameElement.GetString() ?? ""
+                : root.TryGetProperty("unique_name", out var uniqueNameElement) 
+                    ? uniqueNameElement.GetString() ?? ""
+                    : "";
+            
+            var roles = new List<string>();
+            if (root.TryGetProperty("http://schemas.microsoft.com/ws/2008/06/identity/claims/role", out var rolesElement))
+            {
+                if (rolesElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var role in rolesElement.EnumerateArray())
+                    {
+                        var roleValue = role.GetString();
+                        if (!string.IsNullOrEmpty(roleValue))
+                            roles.Add(roleValue);
+                    }
+                }
+                else if (rolesElement.ValueKind == JsonValueKind.String)
+                {
+                    var roleValue = rolesElement.GetString();
+                    if (!string.IsNullOrEmpty(roleValue))
+                        roles.Add(roleValue);
+                }
+            }
+            
+            return (name, roles.ToArray());
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to parse JWT token");
+            return ("", Array.Empty<string>());
+        }
+    }
+
+    private byte[] ParseBase64WithoutPadding(string base64)
+    {
+        switch (base64.Length % 4)
+        {
+            case 2: base64 += "=="; break;
+            case 3: base64 += "="; break;
+        }
+        return Convert.FromBase64String(base64);
+    }
+
+    public void Dispose()
+    {
+        // Cleanup if needed
+    }
+}

@@ -1,0 +1,609 @@
+@using Radzen
+@using Radzen.Blazor
+@using Web.Services
+@using System.Net.Http.Json
+@using Entities.DTOs.Teams
+
+<style>
+    .filter-container {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .filter-card {
+        transition: all 0.3s ease;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    .filter-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    
+    .filter-card .card-title {
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    
+    .selection-container {
+        min-height: 80px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    
+    .form-check-input:checked {
+        background-color: #198754;
+        border-color: #198754;
+    }
+    
+    .alert-sm {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+        margin-bottom: 0;
+    }
+    
+    .quick-date-btn {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        transition: all 0.2s ease;
+    }
+    
+    .quick-date-btn:hover {
+        transform: scale(1.05);
+    }
+    
+    @@media (max-width: 768px) {
+        .filter-container {
+            padding: 15px;
+        }
+        
+        .row.g-3 > * {
+            margin-bottom: 15px;
+        }
+    }
+</style>
+
+
+<!-- Filter Controls -->
+<div class="filter-container">
+<div class="row mb-4 g-3">
+    <!-- Repository Filter -->
+    <div class="col-md-3">
+        <div class="card filter-card h-100 border-primary border-opacity-25">
+            <div class="card-body p-3">
+                <h6 class="card-title text-primary mb-3">
+                    <i class="bi bi-folder2-open me-2"></i>Repository
+                </h6>
+                @if (IsLoadingRepos)
+                {
+                    <input type="text" class="form-control" value="Loading repositories..." disabled />
+                }
+                else if (Repositories != null && Repositories.Any())
+                {
+                    <RadzenDropDown Data="@GetRepositoryOptions()"
+                                  TextProperty="Name"
+                                  ValueProperty="Slug"
+                                  AllowClear="true"
+                                  AllowFiltering="true"
+                                  FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                  Placeholder="Search repositories..."
+                                  Value="@SelectedRepoSlug"
+                                  Change="@(args => OnRepositoryChanged(args))"
+                                  class="w-100" />
+                }
+                else
+                {
+                    <div class="alert alert-warning alert-sm">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        No repositories found
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- User/Team Filter -->
+    <div class="col-md-4">
+        <div class="card filter-card h-100 border-success border-opacity-25">
+            <div class="card-body p-3">
+                <h6 class="card-title text-success mb-3">
+                    <i class="bi bi-people me-2"></i>Filter By
+                </h6>
+                
+                <!-- Radio buttons for selection type -->
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="filterType" id="filterByUser" 
+                                   checked="@(FilterType == @"user")" @onchange="@(() => HandleFilterTypeChanged(@"user"))" 
+                                   disabled="@DisableIndividualFilter" />
+                            <label class="form-check-label fw-medium @(DisableIndividualFilter ? "text-muted" : "")" for="filterByUser">
+                                <i class="bi bi-person me-1"></i>Individual
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="filterType" id="filterByTeam" 
+                                   checked="@(FilterType == @"team")" @onchange="@(() => HandleFilterTypeChanged(@"team"))" />
+                            <label class="form-check-label fw-medium" for="filterByTeam">
+                                <i class="bi bi-people-fill me-1"></i>Team
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                @if (DisableIndividualFilter)
+                {
+                    <div class="alert alert-info alert-sm mb-2">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <small>Individual filter is not available on this page. Use team filtering to analyze group performance.</small>
+                    </div>
+                }
+
+                <!-- Selection Dropdown -->
+                <div class="selection-container">
+                    @if (FilterType == "user")
+                    {
+                        <label class="form-label small text-muted mb-2">
+                            <i class="bi bi-search me-1"></i>Select User
+                        </label>
+                        @if (IsLoadingUsers)
+                        {
+                            <div class="text-center py-2">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span class="text-muted">Loading users...</span>
+                            </div>
+                        }
+                        else if (Users != null && Users.Any())
+                        {
+                            <RadzenDropDown Data="@Users.OrderBy(u => u.DisplayName)"
+                                          TextProperty="DisplayName"
+                                          ValueProperty="Id"
+                                          AllowClear="true"
+                                          AllowFiltering="true"
+                                          FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                          Placeholder="Search users..."
+                                          Value="@SelectedUserId"
+                                          Change="@(args => OnUserChanged(args))"
+                                          class="w-100" />
+                        }
+                        else
+                        {
+                            <div class="alert alert-warning alert-sm">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                No users available
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <label class="form-label small text-muted mb-2">
+                            <i class="bi bi-search me-1"></i>Select Team
+                        </label>
+                        @if (IsLoadingTeams)
+                        {
+                            <div class="text-center py-2">
+                                <div class="spinner-border spinner-border-sm text-success me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span class="text-muted">Loading teams...</span>
+                            </div>
+                        }
+                        else if (Teams != null && Teams.Any())
+                        {
+                            <RadzenDropDown Data="@GetTeamOptions()"
+                                          TextProperty="Name"
+                                          ValueProperty="Id"
+                                          AllowClear="true"
+                                          AllowFiltering="true"
+                                          FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                          Placeholder="Search teams..."
+                                          Value="@SelectedTeamId"
+                                          Change="@(args => OnTeamChanged(args))"
+                                          class="w-100" />
+                        }
+                        else
+                        {
+                            <div class="alert alert-info alert-sm">
+                                <i class="bi bi-info-circle me-1"></i>
+                                No teams found. <a href="/admin/teams" class="alert-link">Create teams</a>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Range Selection -->
+    <div class="col-md-5">
+        <div class="card filter-card h-100 border-info border-opacity-25">
+            <div class="card-body p-3">
+                <h6 class="card-title text-info mb-3">
+                    <i class="bi bi-calendar-range me-2"></i>Date Range
+                </h6>
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label class="form-label small text-muted mb-1">Start Date</label>
+                        <RadzenDatePicker @bind-Value="StartDate" DateFormat="MM/dd/yyyy" Placeholder="Start Date" 
+                                        Change="@(() => OnDateRangeChanged(StartDate))" class="w-100" />
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small text-muted mb-1">End Date</label>
+                        <RadzenDatePicker @bind-Value="EndDate" DateFormat="MM/dd/yyyy" Placeholder="End Date" 
+                                        Change="@(() => OnDateRangeChanged(EndDate))" class="w-100" />
+                    </div>
+                </div>
+                
+                <!-- Quick Date Range Buttons -->
+                <div class="d-flex flex-wrap gap-1">
+                    <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" 
+                                Text="7 Days" Click="@(() => SetDateRange(7))" 
+                                class="btn-outline-info btn-sm rounded-pill px-2 py-1" />
+                    <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" 
+                                Text="30 Days" Click="@(() => SetDateRange(30))" 
+                                class="btn-outline-info btn-sm rounded-pill px-2 py-1" />
+                    <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" 
+                                Text="90 Days" Click="@(() => SetDateRange(90))" 
+                                class="btn-outline-info btn-sm rounded-pill px-2 py-1" />
+                    <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" 
+                                Text="All Time" Click="@(() => SetDateRange(null))" 
+                                class="btn-outline-info btn-sm rounded-pill px-2 py-1" />
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Advanced Filters -->
+<div class="filter-container">
+<div class="row mb-4 g-3">
+    <!-- Content Filters -->
+    <div class="col-md-8">
+        <div class="card filter-card border-warning border-opacity-25">
+            <div class="card-body p-3">
+                <h6 class="card-title text-warning mb-3">
+                    <i class="bi bi-funnel me-2"></i>Content Filters
+                </h6>
+                <div class="row g-3">
+                    <div class="col-lg-3 col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="includePR" @bind="IncludePR" @bind:after="OnFilterChanged">
+                            <label class="form-check-label fw-medium" for="includePR">
+                                <i class="bi bi-git me-1"></i>Include PRs
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="includeData" @bind="IncludeData" @bind:after="OnFilterChanged">
+                            <label class="form-check-label fw-medium" for="includeData">
+                                <i class="bi bi-database me-1"></i>Data Files
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="includeConfig" @bind="IncludeConfig" @bind:after="OnFilterChanged">
+                            <label class="form-check-label fw-medium" for="includeConfig">
+                                <i class="bi bi-gear me-1"></i>Config Files
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="showExcluded" @bind="ShowExcluded" @bind:after="HandleShowExcludedChanged">
+                            <label class="form-check-label fw-medium" for="showExcluded">
+                                <i class="bi bi-eye-slash me-1"></i>Show Excluded
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    @if (ShowGrouping)
+    {
+        <!-- Grouping -->
+        <div class="col-md-3">
+            <div class="card filter-card border-secondary border-opacity-25">
+                <div class="card-body p-3">
+                    <h6 class="card-title text-secondary mb-3">
+                        <i class="bi bi-collection me-2"></i>Grouping
+                    </h6>
+                    <select class="form-select" value="@GroupBy" @onchange="@((ChangeEventArgs e) => { GroupBy = e.Value?.ToString() ?? "Day"; })">
+                        <option value="Day">📅 Daily</option>
+                        <option value="Week">📊 Weekly</option>
+                        <option value="Month">📈 Monthly</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    }
+    
+    <!-- Search Button -->
+    <div class="col-md-@(ShowGrouping ? "1" : "4")">
+        <div class="card filter-card border-success border-opacity-25">
+            <div class="card-body p-3 d-flex flex-column justify-content-end">
+                <button class="btn btn-success w-100" @onclick="OnSearchClicked" disabled="@IsSearching" title="Search">
+                    @if (IsSearching)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-search"></i>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+@code {
+    // Simple model class for dropdown options
+    public class RepositoryOption
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Slug { get; set; } = string.Empty;
+    }
+
+    public class TeamOption
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+
+
+    [Parameter]
+    public bool IsLoadingRepos { get; set; }
+
+    [Parameter]
+    public IEnumerable<RepositorySummaryDto>? Repositories { get; set; }
+
+    [Parameter]
+    public string? SelectedRepoSlug { get; set; }
+
+    [Parameter]
+    public bool IsLoadingUsers { get; set; }
+
+    [Parameter]
+    public IEnumerable<UserDto>? Users { get; set; }
+
+    [Parameter]
+    public int? SelectedUserId { get; set; }
+
+    [Parameter]
+    public bool IsLoadingTeams { get; set; }
+
+    [Parameter]
+    public IEnumerable<TeamSummaryDto>? Teams { get; set; }
+
+    [Parameter]
+    public int? SelectedTeamId { get; set; }
+
+    [Parameter]
+    public string FilterType { get; set; } = "user";
+
+    [Parameter]
+    public DateTime? StartDate { get; set; }
+
+    [Parameter]
+    public DateTime? EndDate { get; set; }
+
+    [Parameter]
+    public bool IncludePR { get; set; } = false;
+
+    [Parameter]
+    public bool IncludeData { get; set; } = true;
+
+    [Parameter]
+    public bool IncludeConfig { get; set; } = true;
+
+    [Parameter]
+    public bool ShowExcluded { get; set; }
+
+    [Parameter]
+    public string GroupBy { get; set; } = "Day";
+
+    [Parameter]
+    public bool ShowGrouping { get; set; } = true;
+
+    [Parameter]
+    public bool DisableIndividualFilter { get; set; } = false;
+
+    [Parameter]
+    public EventCallback<string> OnRepositorySelected { get; set; }
+
+    [Parameter]
+    public EventCallback<int?> OnUserSelected { get; set; }
+
+    [Parameter]
+    public EventCallback<int?> OnTeamSelected { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnFilterTypeChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<(DateTime? start, DateTime? end)> OnDateRangeUpdated { get; set; }
+
+    [Parameter]
+    public EventCallback<(bool includePR, bool includeData, bool includeConfig)> OnFiltersChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnGroupingUpdated { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OnShowExcludedChanged { get; set; }
+
+    [Parameter]
+    public bool IsSearching { get; set; } = false;
+
+    [Parameter]
+    public EventCallback OnSearchButtonClicked { get; set; }
+
+    private async Task OnRepositoryChanged(object? value)
+    {
+        var slug = value?.ToString();
+        SelectedRepoSlug = slug;
+        // Don't invoke callback - wait for Search button
+    }
+
+    private IEnumerable<RepositoryOption> GetRepositoryOptions()
+    {
+        var options = new List<RepositoryOption>();
+        
+        // Don't add "All Repositories" here - it's already added in Dashboard.razor
+        // Just convert the repositories to RepositoryOptions
+        if (Repositories != null)
+        {
+            options.AddRange(Repositories.OrderBy(r => r.Name).Select(r => new RepositoryOption { Name = r.Name, Slug = r.Slug }));
+        }
+        
+        return options;
+    }
+
+    private async Task OnUserChanged(object? value)
+    {
+        var userId = value != null ? (int?)Convert.ToInt32(value) : null;
+        SelectedUserId = userId;
+        // Don't invoke callback - wait for Search button
+    }
+
+    private async Task OnTeamChanged(object? value)
+    {
+        var teamId = value != null ? (int?)Convert.ToInt32(value) : null;
+        SelectedTeamId = teamId;
+        // Don't invoke callback - wait for Search button
+    }
+
+    private async Task HandleFilterTypeChanged(string filterType)
+    {
+        // Prevent switching to user filter if it's disabled
+        if (filterType == "user" && DisableIndividualFilter)
+        {
+            return;
+        }
+        
+        FilterType = filterType;
+        
+        // Clear selections when switching between user and team
+        if (filterType == "user")
+        {
+            SelectedTeamId = null;
+        }
+        else if (filterType == "team")
+        {
+            SelectedUserId = null;
+        }
+        // Don't invoke callbacks - wait for Search button
+    }
+
+    private IEnumerable<TeamOption> GetTeamOptions()
+    {
+        var options = new List<TeamOption>();
+        
+        // Add "All Teams" option
+        options.Add(new TeamOption { Name = "All Teams", Id = -1 });
+        
+        // Add individual teams
+        if (Teams != null)
+        {
+            try
+            {
+                foreach (var team in Teams)
+                {
+                    if (team != null && team.IsActive)
+                    {
+                        var teamName = !string.IsNullOrWhiteSpace(team.Name) ? team.Name : $"Team {team.Id}";
+                        
+                        options.Add(new TeamOption { 
+                            Name = $"{teamName} ({team.MemberCount} member{(team.MemberCount != 1 ? "s" : "")})", 
+                            Id = team.Id
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing teams: {ex.Message}");
+            }
+        }
+        
+        return options.OrderBy(t => t.Name == "All Teams" ? "" : t.Name);
+    }
+
+    private async Task OnDateRangeChanged(DateTime? date)
+    {
+        // Don't invoke callback - wait for Search button
+    }
+
+    private async Task SetDateRange(int? days)
+    {
+        if (days.HasValue)
+        {
+            EndDate = DateTime.Today;
+            StartDate = EndDate.Value.AddDays(-days.Value);
+        }
+        else
+        {
+            StartDate = null;
+            EndDate = null;
+        }
+        // Don't invoke callback - wait for Search button
+    }
+
+    private async Task OnFilterChanged()
+    {
+        // Don't invoke callback - wait for Search button
+    }
+
+    private async Task OnGroupingChanged()
+    {
+        // Don't invoke callback - wait for Search button
+    }
+
+    private void HandleShowExcludedChanged()
+    {
+        // Don't invoke callback - wait for Search button
+    }
+
+    private async Task OnSearchClicked()
+    {
+        // Adjust EndDate to include the full day (23:59:59)
+        DateTime? adjustedEndDate = EndDate;
+        if (EndDate.HasValue && EndDate.Value.TimeOfDay == TimeSpan.Zero)
+        {
+            // If time is 00:00:00, set it to end of day
+            adjustedEndDate = EndDate.Value.Date.AddDays(1).AddSeconds(-1);
+        }
+        
+        // First invoke individual callbacks to update parent's state with current filter values
+        await OnRepositorySelected.InvokeAsync(SelectedRepoSlug);
+        await OnUserSelected.InvokeAsync(SelectedUserId);
+        await OnTeamSelected.InvokeAsync(SelectedTeamId);
+        await OnFilterTypeChanged.InvokeAsync(FilterType);
+        await OnDateRangeUpdated.InvokeAsync((StartDate, adjustedEndDate));
+        await OnFiltersChanged.InvokeAsync((IncludePR, IncludeData, IncludeConfig));
+        if (ShowGrouping)
+        {
+            await OnGroupingUpdated.InvokeAsync(GroupBy);
+        }
+        await OnShowExcludedChanged.InvokeAsync(ShowExcluded);
+        
+        // Then invoke the search button callback to trigger data refresh
+        await OnSearchButtonClicked.InvokeAsync();
+    }
+} 

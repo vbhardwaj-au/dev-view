@@ -1,0 +1,83 @@
+@using System.Text.Json
+
+@inject IJSRuntime JSRuntime
+
+<div class="card h-100">
+    <div class="card-header d-flex align-items-center">
+        @if (!string.IsNullOrEmpty(AvatarUrl))
+        {
+            <img src="@AvatarUrl" alt="@DisplayName" class="rounded-circle me-2" style="width: 32px; height: 32px;" />
+        }
+        else
+        {
+            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px; font-size: 14px;">
+                @DisplayName.Substring(0, Math.Min(2, DisplayName.Length)).ToUpper()
+            </div>
+        }
+        <div class="flex-grow-1">
+            <h6 class="card-title mb-0 text-primary">
+                <button class="btn btn-link p-0 border-0 text-primary" @onclick="HandleNameClick" style="font-weight:bold; text-decoration:underline; cursor:pointer;">@DisplayName</button>
+            </h6>
+            @if (TotalCommits > 0 || TotalLinesAdded > 0 || TotalLinesDeleted > 0)
+            {
+                <small class="text-muted">@StatsString</small>
+            }
+        </div>
+    </div>
+    <div class="card-body">
+        <div style="position: relative; height: 200px;">
+            <canvas id="@CanvasId"></canvas>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string DisplayName { get; set; } = string.Empty;
+    [Parameter] public string? AvatarUrl { get; set; }
+    [Parameter] public string CanvasId { get; set; } = string.Empty;
+    [Parameter] public List<CommitActivityDto> ActivityData { get; set; } = new();
+    [Parameter] public int TotalCommits { get; set; }
+    [Parameter] public int TotalLinesAdded { get; set; }
+    [Parameter] public int TotalLinesDeleted { get; set; }
+    [Parameter] public bool IsTopCommitter { get; set; } = true;
+    [Parameter] public EventCallback<DateTime> OnChartClick { get; set; }
+    [Parameter] public EventCallback<int> OnNameClick { get; set; }
+    [Parameter] public int ContributorUserId { get; set; }
+
+    private DotNetObjectReference<ContributorChart>? _dotNetRef;
+    private string StatsString => $"{TotalCommits} commits, {TotalLinesAdded}++ {TotalLinesDeleted}--";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+        }
+        if (ActivityData != null && ActivityData.Any())
+        {
+            // Pass parsed data directly to JS
+            await JSRuntime.InvokeVoidAsync("initializeCommitterChart", CanvasId, ActivityData, DisplayName, IsTopCommitter, _dotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public Task HandleChartClick(string dateString)
+    {
+        if (DateTime.TryParse(dateString, out var date))
+        {
+            return OnChartClick.InvokeAsync(date);
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task HandleNameClick()
+    {
+        Console.WriteLine($"Contributor name clicked: {DisplayName}");
+        return OnNameClick.InvokeAsync(ContributorUserId);
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+} 

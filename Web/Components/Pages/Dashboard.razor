@@ -1,0 +1,1534 @@
+@attribute [Authorize]
+@page "/dashboard"
+@page "/"
+@rendermode InteractiveServer
+
+@using Radzen
+@using Radzen.Blazor
+@using Web.Services
+@using System.Net.Http.Json
+@using System.Text.Json
+@using System.Linq
+@using Web.Components.Common
+@using Entities.DTOs.Teams
+
+@using System.Globalization
+@inject HttpClient Http
+@inject ILogger<Dashboard> Logger
+@inject IJSRuntime JSRuntime
+@inject WorkspaceService WorkspaceService
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard - DevView</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">
+                <i class="bi bi-graph-up"></i> Analytics Dashboard
+            </h1>
+        </div>
+    </div>
+
+    @if (!WorkspaceService.HasSelectedWorkspace)
+    {
+        <div class="alert alert-warning" role="alert">
+            <h4 class="alert-heading">Workspace Not Configured</h4>
+            <p>Please select a workspace in Settings to view analytics.</p>
+            <hr>
+            <button class="btn btn-primary" @onclick='() => Navigation.NavigateTo("/admin/settings")'>
+                <i class="bi bi-gear-fill me-2"></i>Go to Settings
+            </button>
+        </div>
+    }
+    else
+    {
+        <CommitsFilter 
+            IsLoadingRepos="@isLoadingRepos"
+            Repositories="@repositories"
+            SelectedRepoSlug="@selectedRepoSlug"
+            IsLoadingUsers="@isLoadingUsers"
+            Users="@users"
+            SelectedUserId="@selectedUserId"
+            IsLoadingTeams="@isLoadingTeams"
+            Teams="@teams"
+            SelectedTeamId="@selectedTeamId"
+            FilterType="@filterType"
+            StartDate="@startDate"
+            EndDate="@endDate"
+            IncludePR="@includePR"
+            IncludeData="@includeData"
+            IncludeConfig="@includeConfig"
+            GroupBy="@selectedGrouping"
+            ShowGrouping="true"
+            ShowExcluded="@showExcluded"
+            IsSearching="@isLoadingCommits"
+            OnRepositorySelected="OnRepositorySelected"
+            OnUserSelected="OnUserSelected"
+            OnTeamSelected="OnTeamSelected"
+            OnFilterTypeChanged="OnFilterTypeChanged"
+            OnDateRangeUpdated="OnDateRangeUpdated"
+            OnFiltersChanged="OnFiltersChanged"
+            OnGroupingUpdated="OnGroupingUpdated"
+            OnShowExcludedChanged="OnShowExcludedChanged"
+            OnSearchButtonClicked="OnSearchButtonClicked" />
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Darker">
+                @errorMessage
+            </RadzenAlert>
+        }
+
+        @if (isLoadingCommits)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span>Loading commit activity...</span>
+                </div>
+            </RadzenAlert>
+        }
+        else if (commitActivity != null && commitActivity.Any())
+        {
+            <div class="row mb-4">
+                <div class="col-12">
+                    <CommitActivityChart 
+                        Data="@commitActivity"
+                        Title="@($"Commit Activity Over Time ({selectedGrouping})")"
+                        ChartId="dashboardCommitChart"
+                        GroupBy="@selectedGrouping"
+                        RepositoryInfo="@GetDashboardRepositoryInfo()"
+                        IsLoading="@isLoadingCommits" />
+                </div>
+            </div>
+        }
+    }
+    
+    <!-- Chart Click Information -->
+    @if (!string.IsNullOrEmpty(selectedDataPoint))
+    {
+        <div class="mt-3">
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter">
+                <strong>Selected Data Point:</strong> @selectedDataPoint
+            </RadzenAlert>
+        </div>
+    }
+    
+    <!-- Data Table Modal -->
+    <div class="modal fade" id="dataTableModal" tabindex="-1" aria-labelledby="dataTableModalLabel" aria-hidden="true" style="display: none;">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="dataTableModalLabel">📋 Commit Activity Data</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <small class="text-muted">💡 <strong>Chart:</strong> Hover for detailed tooltips, click legends to toggle datasets • <strong>Table:</strong> Hover rows for detailed line counts</small>
+                    </div>
+                    @if (commitActivity != null && commitActivity.Any())
+                    {
+                        <RadzenDataGrid AllowFiltering="true" AllowColumnResize="true" AllowAlternatingRows="false" FilterMode="FilterMode.Advanced" AllowSorting="true" PageSize="15" AllowPaging="true" PagerHorizontalAlign="HorizontalAlign.Left" ShowPagingSummary="true"
+                                        Data="@commitActivity" TItem="CommitActivityDto" LogicalFilterOperator="LogicalFilterOperator.Or" RowRender="@OnRowRender">
+                            <Columns>
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="Date" Title="Date" Width="120px" FormatString="{0:MMM dd, yyyy}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="CommitCount" Title="Commits" Width="80px" TextAlign="TextAlign.Center">
+                                    <Template Context="data">
+                                        <RadzenBadge BadgeStyle="BadgeStyle.Primary" Text="@data.CommitCount.ToString()" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="TotalLinesAdded" Title="Total ++" Width="100px" TextAlign="TextAlign.Right" FormatString="{0:N0}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="TotalLinesRemoved" Title="Total --" Width="100px" TextAlign="TextAlign.Right" FormatString="{0:N0}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="CodeLinesAdded" Title="Code ++" Width="80px" TextAlign="TextAlign.Right" FormatString="{0:N0}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="CodeLinesRemoved" Title="Code --" Width="80px" TextAlign="TextAlign.Right" FormatString="{0:N0}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="DataLinesAdded" Title="Data ++" Width="80px" TextAlign="TextAlign.Right" FormatString="{0:N0}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="DataLinesRemoved" Title="Data --" Width="80px" TextAlign="TextAlign.Right" FormatString="{0:N0}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="ConfigLinesAdded" Title="Config ++" Width="80px" TextAlign="TextAlign.Right" FormatString="{0:N0}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Property="ConfigLinesRemoved" Title="Config --" Width="80px" TextAlign="TextAlign.Right" FormatString="{0:N0}" />
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Title="Net Change" Width="100px" TextAlign="TextAlign.Right" Sortable="false">
+                                    <Template Context="data">
+                                        @{
+                                            var netChange = data.TotalLinesAdded - data.TotalLinesRemoved;
+                                            var badgeStyle = netChange > 0 ? BadgeStyle.Success : netChange < 0 ? BadgeStyle.Danger : BadgeStyle.Secondary;
+                                            var sign = netChange > 0 ? "+" : "";
+                                        }
+                                        <RadzenBadge BadgeStyle="@badgeStyle" Text="@($"{sign}{netChange:N0}")" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="CommitActivityDto" Title="Actions" Width="80px" Sortable="false" Filterable="false">
+                                    <Template Context="data">
+                                        <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Primary" Text="Select" Click="@(() => SelectDataPoint(data))" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                            </Columns>
+                        </RadzenDataGrid>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted py-4">
+                            <i class="bi bi-table"></i>
+                            <p class="mt-2">No data available. Please select a repository and date range.</p>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    @if (commitActivity != null && commitActivity.Any())
+                    {
+                        <button type="button" class="btn btn-primary" onclick="exportTableData()">
+                            📊 Export Data
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loading Contributors -->
+    @if (isLoadingContributors)
+    {
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="alert alert-info">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span>Loading contributor charts...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Individual Contributor Charts -->
+    @if (contributorData != null && contributorData.Any())
+    {
+        <div class="row mt-4">
+            <div class="col-12">
+                <h4 class="mb-3">👥 Individual Contributors (@GetUniqueContributors().Count())</h4>
+                <div class="row" id="contributorChartsContainer">
+                    @foreach (var contributor in GetUniqueContributors())
+                    {
+                        var canvasId = $"contributorChart_{contributor.UserId}";
+                        var activityData = _individualContributorCommitActivity.ContainsKey(contributor.UserId) ? _individualContributorCommitActivity[contributor.UserId] : new List<CommitActivityDto>();
+
+                        // Apply filters to calculate totals
+                        var filteredActivity = activityData.AsEnumerable();
+
+                        if (!includePR)
+                        {
+                            filteredActivity = filteredActivity.Where(a => !a.IsMergeCommit);
+                        }
+
+                        var totalCommits = filteredActivity.Sum(a => a.CommitCount);
+                        var totalLinesAdded = filteredActivity.Sum(a => 
+                            a.CodeLinesAdded 
+                            + (includeData ? a.DataLinesAdded : 0) 
+                            + (includeConfig ? a.ConfigLinesAdded : 0)
+                        );
+                        var totalLinesDeleted = filteredActivity.Sum(a => 
+                            a.CodeLinesRemoved 
+                            + (includeData ? a.DataLinesRemoved : 0) 
+                            + (includeConfig ? a.ConfigLinesRemoved : 0)
+                        );
+
+                        <div class="col-md-6 col-lg-4 mb-4">
+                            <ContributorChart 
+                                DisplayName="@contributor.DisplayName"
+                                AvatarUrl="@contributor.AvatarUrl"
+                                CanvasId="@canvasId"
+                                ActivityData="@activityData"
+                                TotalCommits="@totalCommits"
+                                TotalLinesAdded="@totalLinesAdded"
+                                TotalLinesDeleted="@totalLinesDeleted"
+                                IsTopCommitter="true"
+                                OnChartClick="@(date => HandleContributorChartClick(contributor.UserId, date))"
+                                OnNameClick="@(userId => NavigateToUserCommits(userId, contributor.DisplayName, null, selectedRepoSlug))"
+                                ContributorUserId="@contributor.UserId" />
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Commit Details Modal -->
+@if (showCommitDetailsModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">📝 Commit Details for @commitDetailsModalTitle</h5>
+                    <button type="button" class="btn-close" @onclick="CloseCommitDetailsModal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoadingCommitDetails)
+                    {
+                        <div class="d-flex align-items-center justify-content-center" style="height:200px;">
+                            <div class="spinner-border text-primary me-2"></div>
+                            <span>Loading commit details...</span>
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(commitDetailsError))
+                    {
+                        <div class="alert alert-danger">@commitDetailsError</div>
+                    }
+                    else if (commitDetailsList != null && commitDetailsList.Any())
+                    {
+                        <RadzenDataGrid Data="@commitDetailsList" TItem="CommitDetailDto" AllowPaging="true" PageSize="10" AllowSorting="true">
+                            <Columns>
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="CommitHash" Title="Hash" Width="120px">
+                                    <Template Context="data">
+                                        <span title="@data.CommitHash">@data.CommitHash.Substring(0, Math.Min(8, data.CommitHash.Length))...</span>
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="Message" Title="Message" Width="300px">
+                                    <Template Context="data">
+                                        <span title="@data.Message">@((data.Message?.Length > 80) ? data.Message.Substring(0, 80) + "..." : data.Message)</span>
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="RepositoryName" Title="Repository" Width="150px" />
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="LinesAdded" Title="+Lines" Width="80px" />
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="LinesRemoved" Title="-Lines" Width="80px" />
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="CodeLinesAdded" Title="+Code" Width="80px" />
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="CodeLinesRemoved" Title="-Code" Width="80px" />
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="Date" Title="Date" Width="160px" FormatString="{0:yyyy-MM-dd HH:mm}" />
+                                <RadzenDataGridColumn TItem="CommitDetailDto" Property="IsMerge" Title="Merge?" Width="60px">
+                                    <Template Context="data">
+                                        @if (data.IsMerge)
+                                        {
+                                            <span class="badge bg-secondary">Yes</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-success">No</span>
+                                        }
+                                    </Template>
+                                </RadzenDataGridColumn>
+                            </Columns>
+                        </RadzenDataGrid>
+                    }
+                    else
+                    {
+                        <div class="alert alert-info">No commits found for this contributor on this date.</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseCommitDetailsModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Chart.js JavaScript -->
+<script>
+
+    
+    window.dashboardComponent = { dotNetRef: null };
+    window.setDashboardDotNetRef = function(dotNetRef) {
+        window.dashboardComponent.dotNetRef = dotNetRef;
+    };
+    
+    // Initialize contributor charts
+    window.initializeContributorCharts = (contributorData) => {
+        // Cleanup all existing contributor charts before creating new ones
+        if (window.contributorCharts) {
+            Object.keys(window.contributorCharts).forEach(key => {
+                if (window.contributorCharts[key] && typeof window.contributorCharts[key].destroy === 'function') {
+                    try {
+                        window.contributorCharts[key].destroy();
+                    } catch(e) {
+                        console.warn(`Failed to destroy chart ${key}:`, e);
+                    }
+                }
+            });
+            window.contributorCharts = {};
+        }
+        
+        if (!Array.isArray(contributorData) || contributorData.length === 0) {
+            console.warn('No contributor data provided or data is empty');
+            return;
+        }
+        
+        // Group data by contributor
+        const contributorGroups = {};
+        contributorData.forEach(item => {
+            if (!contributorGroups[item.userId]) {
+                contributorGroups[item.userId] = {
+                    displayName: item.displayName,
+                    data: []
+                };
+            }
+            contributorGroups[item.userId].data.push(item);
+        });
+        
+        // Create chart for each contributor
+        Object.keys(contributorGroups).forEach(userId => {
+            const contributor = contributorGroups[userId];
+            const canvasId = `contributorChart_${userId}`;
+            
+            const canvas = document.getElementById(canvasId);
+            
+            if (!canvas) {
+                // Don't log error on first attempt, just retry
+                setTimeout(() => {
+                    window.initializeContributorChartsForUser(userId, contributor, 0);
+                }, 50);
+                return;
+            }
+        
+            const ctx = canvas.getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (window.contributorCharts === undefined) {
+                window.contributorCharts = {};
+            }
+            if (window.contributorCharts[userId] && typeof window.contributorCharts[userId].destroy === 'function') {
+                window.contributorCharts[userId].destroy();
+            }
+            
+            // Also check committerCharts storage
+            if (window.committerCharts && window.committerCharts[canvasId] && typeof window.committerCharts[canvasId].destroy === 'function') {
+                window.committerCharts[canvasId].destroy();
+                delete window.committerCharts[canvasId];
+            }
+            
+            // Get the existing chart instance from Chart.js directly and destroy it
+            const existingChart = Chart.getChart(canvas);
+            if (existingChart) {
+                existingChart.destroy();
+            }
+            
+            // Prepare data
+            const labels = contributor.data.map(item => {
+                const date = new Date(item.date);
+                // Format based on grouping type
+                const grouping = window.selectedGrouping || 'Day';
+                
+                if (grouping === 'Month') {
+                    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                } else if (grouping === 'Week') {
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                } else {
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
+            });
+            
+            const commitCounts = contributor.data.map(item => item.commitCount);
+            const totalAdded = contributor.data.map(item => item.totalLinesAdded);
+            const totalRemoved = contributor.data.map(item => item.totalLinesRemoved);
+            
+            const codeAdded = contributor.data.map(item => item.codeLinesAdded);
+            const codeRemoved = contributor.data.map(item => item.codeLinesRemoved);
+            const dataAdded = contributor.data.map(item => item.dataLinesAdded);
+            const dataRemoved = contributor.data.map(item => item.dataLinesRemoved);
+            const configAdded = contributor.data.map(item => item.configLinesAdded);
+            const configRemoved = contributor.data.map(item => item.configLinesRemoved);
+            
+            try {
+                // Create chart
+                window.contributorCharts[userId] = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Commits',
+                                data: commitCounts,
+                                borderColor: 'rgb(54, 162, 235)',
+                                backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 3,
+                                pointHoverRadius: 6,
+                                borderWidth: 2,
+                                hidden: false // Ensure it's visible by default
+                            },
+                            {
+                                label: 'Total ++',
+                                data: totalAdded,
+                                borderColor: 'rgb(34, 197, 94)',
+                                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 1.5,
+                                hidden: false // Ensure it's visible by default
+                            },
+                            {
+                                label: 'Total --',
+                                data: totalRemoved,
+                                borderColor: 'rgb(239, 68, 68)',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 1.5,
+                                hidden: false // Ensure it's visible by default
+                            },
+                            {
+                                label: '🧑‍💻 Code ++',
+                                data: codeAdded,
+                                borderColor: 'rgb(22, 163, 74)',
+                                backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 1.5,
+                                hidden: true
+                            },
+                            {
+                                label: '🧑‍💻 Code --',
+                                data: codeRemoved,
+                                borderColor: 'rgb(220, 38, 38)',
+                                backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 1.5,
+                                hidden: true
+                            },
+                            {
+                                label: '🗄️ Data ++',
+                                data: dataAdded,
+                                borderColor: 'rgb(147, 51, 234)',
+                                backgroundColor: 'rgba(147, 51, 234, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 1.5,
+                                hidden: true
+                            },
+                            {
+                                label: '🗄️ Data --',
+                                data: dataRemoved,
+                                borderColor: 'rgb(126, 34, 206)',
+                                backgroundColor: 'rgba(126, 34, 206, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 1.5,
+                                hidden: true
+                            },
+                            {
+                                label: '🛠️ Config ++',
+                                data: configAdded,
+                                borderColor: 'rgb(245, 158, 11)',
+                                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 1.5,
+                                hidden: true
+                            },
+                            {
+                                label: '🛠️ Config --',
+                                data: configRemoved,
+                                borderColor: 'rgb(217, 119, 6)',
+                                backgroundColor: 'rgba(217, 119, 6, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 1.5,
+                                hidden: true
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'bottom',
+                                labels: {
+                                    usePointStyle: true,
+                                    pointStyle: 'circle',
+                                    font: {
+                                        size: 10
+                                    },
+                                    padding: 10
+                                },
+                                onClick: async (event, legendItem, legend) => {
+                                    const index = legendItem.datasetIndex;
+                                    const chart = legend.chart;
+                                    const meta = chart.getDatasetMeta(index);
+                                    
+                                    meta.hidden = meta.hidden === null ? !chart.data.datasets[index].hidden : null;
+                                    chart.update();
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(context) {
+                                        const dataIndex = context[0].dataIndex;
+                                        const date = new Date(contributor.data[dataIndex].date);
+                                        return date.toLocaleDateString('en-US', { 
+                                            weekday: 'short', 
+                                            month: 'short', 
+                                            day: 'numeric' 
+                                        });
+                                    },
+                                    label: function(context) {
+                                        const dataIndex = context.dataIndex;
+                                        const item = contributor.data[dataIndex];
+                                        const label = context.dataset.label;
+                                        switch(label) {
+                                            case 'Commits':
+                                                return `📝 Commits: ${item.commitCount}`;
+                                            case 'Total ++':
+                                                return `➕ Total ++: ${item.totalLinesAdded.toLocaleString()} lines`;
+                                            case 'Total --':
+                                                return `➖ Total --: ${item.totalLinesRemoved.toLocaleString()} lines`;
+                                            case '🧑‍💻 Code ++':
+                                                return `🧑‍💻 Code ++: ${item.codeLinesAdded.toLocaleString()} lines`;
+                                            case '🧑‍💻 Code --':
+                                                return `🧑‍💻 Code --: ${item.codeLinesRemoved.toLocaleString()} lines`;
+                                            case '🗄️ Data ++':
+                                                return `🗄️ Data ++: ${item.dataLinesAdded.toLocaleString()} lines`;
+                                            case '🗄️ Data --':
+                                                return `🗄️ Data --: ${item.dataLinesRemoved.toLocaleString()} lines`;
+                                            case '🛠️ Config ++':
+                                                return `🛠️ Config ++: ${item.configLinesAdded.toLocaleString()} lines`;
+                                            case '🛠️ Config --':
+                                                return `🛠️ Config --: ${item.configLinesRemoved.toLocaleString()} lines`;
+                                            default:
+                                                return `${label}: ${context.parsed.y.toLocaleString()}`;
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                display: true,
+                                grid: {
+                                    display: false
+                                },
+                                ticks: {
+                                    maxTicksLimit: 6,
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            },
+                            y: {
+                                display: true,
+                                beginAtZero: true,
+                                grid: {
+                                    color: 'rgba(0, 0, 0, 0.1)'
+                                },
+                                ticks: {
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error(`Error initializing chart for user ${contributor.displayName} (ID: ${userId}):`, error);
+            }
+            
+        });
+    };
+    
+    // New function to initialize chart for a single contributor, used by retry logic
+    window.initializeContributorChartsForUser = (userId, contributor, retryCount = 0) => {
+        const canvasId = `contributorChart_${userId}`;
+        const canvas = document.getElementById(canvasId);
+        
+        if (!canvas) {
+            // Limit retries to prevent infinite loop
+            if (retryCount < 5) {
+                console.log(`Canvas ${canvasId} not found, retry ${retryCount + 1}/5`);
+                setTimeout(() => window.initializeContributorChartsForUser(userId, contributor, retryCount + 1), 100);
+            } else {
+                console.warn(`Canvas ${canvasId} not found after 5 retries, skipping chart creation`);
+            }
+            return;
+        }
+        const ctx = canvas.getContext('2d');
+        
+        // Destroy existing chart if it exists
+        if (window.contributorCharts === undefined) {
+            window.contributorCharts = {};
+        }
+        if (window.contributorCharts[userId] && typeof window.contributorCharts[userId].destroy === 'function') {
+            window.contributorCharts[userId].destroy();
+        }
+        
+        // Also check committerCharts storage
+        if (window.committerCharts && window.committerCharts[canvasId] && typeof window.committerCharts[canvasId].destroy === 'function') {
+            window.committerCharts[canvasId].destroy();
+            delete window.committerCharts[canvasId];
+        }
+        
+        // Get the existing chart instance from Chart.js directly and destroy it
+        const existingChart = Chart.getChart(canvas);
+        if (existingChart) {
+            existingChart.destroy();
+        }
+        
+        // Prepare data (re-use logic from original initializeContributorCharts)
+        const labels = contributor.data.map(item => {
+            const date = new Date(item.date);
+            const grouping = window.selectedGrouping || 'Day';
+            
+            if (grouping === 'Month') {
+                return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            } else if (grouping === 'Week') {
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            } else {
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+        });
+        
+        const commitCounts = contributor.data.map(item => item.commitCount);
+        const totalAdded = contributor.data.map(item => item.totalLinesAdded);
+        const totalRemoved = contributor.data.map(item => item.totalLinesRemoved);
+        
+        const codeAdded = contributor.data.map(item => item.codeLinesAdded);
+        const codeRemoved = contributor.data.map(item => item.codeLinesRemoved);
+        const dataAdded = contributor.data.map(item => item.dataLinesAdded);
+        const dataRemoved = contributor.data.map(item => item.dataLinesRemoved);
+        const configAdded = contributor.data.map(item => item.configLinesAdded);
+        const configRemoved = contributor.data.map(item => item.configLinesRemoved);
+        
+        try {
+            // Create chart
+            window.contributorCharts[userId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Commits',
+                            data: commitCounts,
+                            borderColor: 'rgb(54, 162, 235)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 3,
+                            pointHoverRadius: 6,
+                            borderWidth: 2,
+                            hidden: false
+                        },
+                        {
+                            label: 'Total ++',
+                            data: totalAdded,
+                            borderColor: 'rgb(34, 197, 94)',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 1.5,
+                            hidden: false
+                        },
+                        {
+                            label: 'Total --',
+                            data: totalRemoved,
+                            borderColor: 'rgb(239, 68, 68)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 1.5,
+                            hidden: false
+                        },
+                        {
+                            label: '🧑‍💻 Code ++',
+                            data: codeAdded,
+                            borderColor: 'rgb(22, 163, 74)',
+                            backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 1.5,
+                            hidden: true
+                        },
+                        {
+                            label: '🧑‍💻 Code --',
+                            data: codeRemoved,
+                            borderColor: 'rgb(220, 38, 38)',
+                            backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 1.5,
+                            hidden: true
+                        },
+                        {
+                            label: '🗄️ Data ++',
+                            data: dataAdded,
+                            borderColor: 'rgb(147, 51, 234)',
+                            backgroundColor: 'rgba(147, 51, 234, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 1.5,
+                            hidden: true
+                        },
+                        {
+                            label: '🗄️ Data --',
+                            data: dataRemoved,
+                            borderColor: 'rgb(126, 34, 206)',
+                            backgroundColor: 'rgba(126, 34, 206, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 1.5,
+                            hidden: true
+                        },
+                        {
+                            label: '🛠️ Config ++',
+                            data: configAdded,
+                            borderColor: 'rgb(245, 158, 11)',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 1.5,
+                            hidden: true
+                        },
+                        {
+                            label: '🛠️ Config --',
+                            data: configRemoved,
+                            borderColor: 'rgb(217, 119, 6)',
+                            backgroundColor: 'rgba(217, 119, 6, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 1.5,
+                            hidden: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: {
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                font: {
+                                    size: 10
+                                },
+                                padding: 10
+                            },
+                            onClick: async (event, legendItem, legend) => {
+                                const index = legendItem.datasetIndex;
+                                const chart = legend.chart;
+                                const meta = chart.getDatasetMeta(index);
+                                
+                                meta.hidden = meta.hidden === null ? !chart.data.datasets[index].hidden : null;
+                                chart.update();
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    const dataIndex = context[0].dataIndex;
+                                    const date = new Date(contributor.data[dataIndex].date);
+                                    return date.toLocaleDateString('en-US', { 
+                                        weekday: 'short', 
+                                        month: 'short', 
+                                        day: 'numeric' 
+                                    });
+                                },
+                                label: function(context) {
+                                    const dataIndex = context.dataIndex;
+                                    const item = contributor.data[dataIndex];
+                                    const label = context.dataset.label;
+                                    switch(label) {
+                                        case 'Commits':
+                                            return `📝 Commits: ${item.commitCount}`;
+                                        case 'Total ++':
+                                            return `➕ Total ++: ${item.totalLinesAdded.toLocaleString()} lines`;
+                                        case 'Total --':
+                                            return `➖ Total --: ${item.totalLinesRemoved.toLocaleString()} lines`;
+                                        case '🧑‍💻 Code ++':
+                                            return `🧑‍💻 Code ++: ${item.codeLinesAdded.toLocaleString()} lines`;
+                                        case '🧑‍💻 Code --':
+                                            return `🧑‍💻 Code --: ${item.codeLinesRemoved.toLocaleString()} lines`;
+                                        case '🗄️ Data ++':
+                                            return `🗄️ Data ++: ${item.dataLinesAdded.toLocaleString()} lines`;
+                                        case '🗄️ Data --':
+                                            return `🗄️ Data --: ${item.dataLinesRemoved.toLocaleString()} lines`;
+                                        case '🛠️ Config ++':
+                                            return `🛠️ Config ++: ${item.configLinesAdded.toLocaleString()} lines`;
+                                            case '🛠️ Config --':
+                                            return `🛠️ Config --: ${item.configLinesRemoved.toLocaleString()} lines`;
+                                        default:
+                                            return `${label}: ${context.parsed.y.toLocaleString()}`;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxTicksLimit: 6,
+                                font: {
+                                    size: 10
+                                }
+                            }
+                        },
+                        y: {
+                            display: true,
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            },
+                            ticks: {
+                                font: {
+                                    size: 10
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error(`Error initializing chart for user ${contributor.displayName} (ID: ${userId}):`, error);
+        }
+    };
+    
+    window.exportTableData = () => {
+        console.log('Export functionality - to be implemented');
+        alert('Export functionality coming soon!');
+    };
+    
+    // Ensure modal is hidden on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const modal = document.getElementById('dataTableModal');
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('show');
+            modal.setAttribute('aria-hidden', 'true');
+            console.log('Modal explicitly hidden on page load');
+        }
+    });
+    
+    window.toggleDataset = (datasetIndex) => {
+        if (window.commitChart && typeof window.commitChart.update === 'function') {
+            const dataset = window.commitChart.data.datasets[datasetIndex];
+            dataset.hidden = !dataset.hidden;
+            window.commitChart.update();
+        }
+    };
+</script>
+
+@code {
+    private RepositorySummaryDto[]? repositories;
+    private CommitActivityDto[]? commitActivity;
+    private ContributorActivityDto[]? contributorData;
+    private bool isLoadingRepos = true;
+    private bool isLoadingCommits = false;
+    private bool isLoadingContributors = false;
+    private string? errorMessage;
+    private string? selectedRepoSlug;
+    private DateTime? startDate;
+    private DateTime? endDate;
+    private string? selectedDataPoint;
+    private CommitActivityDto? selectedCommitData;
+    private bool showCommitDetailsModal = false;
+    private bool isLoadingCommitDetails = false;
+    private string? commitDetailsError;
+    private List<CommitDetailDto>? commitDetailsList;
+    private string? commitDetailsModalTitle;
+    private DotNetObjectReference<Dashboard>? _dotNetRef;
+    private bool includePR = false;
+    private bool includeData = false;
+    private bool includeConfig = false;
+    private string selectedGrouping = "Day";
+    private Dictionary<int, List<CommitActivityDto>> _individualContributorCommitActivity = new();
+    private bool showExcluded = false;
+    private bool _shouldReinitializeCharts = false;
+    
+    // Team filtering variables
+    private bool isLoadingUsers = false;
+    private bool isLoadingTeams = false;
+    private IEnumerable<UserDto>? users;
+    private IEnumerable<TeamSummaryDto>? teams;
+    private int? selectedUserId;
+    private int? selectedTeamId;
+    private string filterType = "user";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Always load all available repositories first
+        await LoadRepositories();
+
+        if (repositories != null && repositories.Any())
+        {
+            // If no workspace is selected in WorkspaceService, try to auto-select one
+            if (!WorkspaceService.HasSelectedWorkspace)
+            {
+                // Find the first actual repository (not the "All Repositories" option)
+                var firstActualRepo = repositories.FirstOrDefault(r => r.Slug != "ALL");
+                if (firstActualRepo != null)
+                {
+                    WorkspaceService.SelectedWorkspace = firstActualRepo.Workspace;
+                }
+            }
+
+            // Now, if a workspace is selected (either previously or auto-selected), filter the repositories for the UI
+            if (WorkspaceService.HasSelectedWorkspace && repositories != null)
+            {
+                // Filter repositories by the selected workspace, always including the "ALL" option
+                repositories = repositories
+                    .Where(r => r.Workspace == WorkspaceService.SelectedWorkspace || r.Slug == "ALL")
+                    .ToArray();
+
+                // If selectedRepoSlug is not set or invalid for the current workspace, default to "ALL"
+                if (string.IsNullOrEmpty(selectedRepoSlug) || (repositories != null && !repositories.Any(r => r.Slug == selectedRepoSlug)))
+                {
+                    selectedRepoSlug = "ALL";
+                }
+            }
+            else // If still no workspace is selected (e.g., no repositories at all), redirect to settings
+            {
+                Navigation.NavigateTo("/admin/settings");
+                return;
+            }
+
+            // Auto-load initial data if repositories are available and workspace is set
+            if (repositories != null && repositories.Any() && WorkspaceService.HasSelectedWorkspace)
+            {
+                // Set default date range to Last 7 Days if not already set
+                startDate ??= DateTime.Today.AddDays(-7);
+                endDate ??= DateTime.Today;
+
+                await LoadCommitActivity();
+                _shouldReinitializeCharts = true; // Flag to reinitialize charts on first load
+            }
+        }
+
+        await InvokeAsync(StateHasChanged); // Ensure UI updates after data is loaded and filtered
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("setDashboardDotNetRef", _dotNetRef);
+            // Initialize JavaScript variables
+            await JSRuntime.InvokeVoidAsync("eval", $"window.selectedGrouping = \"{selectedGrouping}\"");
+            await JSRuntime.InvokeVoidAsync("eval", $"window.showExcluded = \"{showExcluded}\";");
+            
+            // Load users and teams for filtering
+            await LoadUsersAndTeams();
+        }
+
+        // Only initialize contributor charts when explicitly flagged (after new data load)
+        if (_shouldReinitializeCharts && contributorData != null && contributorData.Any())
+        {
+            await InitializeContributorCharts();
+            _shouldReinitializeCharts = false; // Reset the flag
+        }
+    }
+
+    private async Task LoadRepositories()
+    {
+        try
+        {
+            isLoadingRepos = true;
+            errorMessage = null; // Clear previous errors
+            // Fetch all repositories first, without any initial filtering
+            var allRepositoriesData = await Http.GetFromJsonAsync<RepositorySummaryDto[]>("api/analytics/repositories");
+            // Filter out repositories excluded from reporting for selection
+            if (allRepositoriesData != null)
+            {
+                allRepositoriesData = allRepositoriesData.Where(r => !r.ExcludeFromReporting).ToArray();
+            }
+
+            // Add an "All Repositories" option with its Workspace explicitly set to "All"
+            var allOption = new RepositorySummaryDto { 
+                Name = "All Repositories", 
+                Slug = "ALL", 
+                Workspace = "All",
+                OldestCommitDate = null,
+                LastDeltaSyncDate = null,
+                OpenPullRequestCount = 0,
+                OldestOpenPullRequestDate = null,
+                PRsMissingApprovalCount = 0
+            };
+
+            // Combine all fetched repositories with the "All Repositories" option
+            repositories = new[] { allOption }.Concat(allRepositoriesData ?? Array.Empty<RepositorySummaryDto>()).ToArray();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading repositories: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingRepos = false;
+        }
+    }
+
+    private async Task OnRepositorySelected(string? repoSlug)
+    {
+        selectedRepoSlug = repoSlug;
+        // Don't update JS variables here - wait for Search button
+    }
+
+    private async Task OnDateRangeUpdated((DateTime? start, DateTime? end) dates)
+    {
+        startDate = dates.start;
+        endDate = dates.end;  // This now receives the adjusted end date (23:59:59) from CommitsFilter
+    }
+
+    private async Task OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
+    {
+        includePR = filters.includePR;
+        includeData = filters.includeData;
+        includeConfig = filters.includeConfig;
+    }
+
+    private async Task OnGroupingUpdated(string grouping)
+    {
+        selectedGrouping = grouping;
+        // Don't update JS variables here - wait for Search button
+    }
+
+    private async Task OnShowExcludedChanged(bool value)
+    {
+        showExcluded = value;
+    }
+
+    private async Task RefreshDashboardData()
+    {
+        if (!string.IsNullOrEmpty(selectedRepoSlug) && WorkspaceService.HasSelectedWorkspace)
+        {
+            var repoForApi = selectedRepoSlug == "ALL" ? null : selectedRepoSlug;
+            await LoadCommitActivity();
+            // Removed conditional chart initialization as OnAfterRenderAsync will handle it
+            await InvokeAsync(StateHasChanged); // Ensure UI updates after data is loaded and filters applied
+        }
+        else
+        {
+            commitActivity = null;
+            contributorData = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void SetDateRange(int? days)
+    {
+        if (days.HasValue)
+        {
+            endDate = DateTime.Today;
+            startDate = endDate.Value.AddDays(-days.Value);
+        }
+        else
+        {
+            startDate = null;
+            endDate = null;
+        }
+
+        // Reload data with new date range
+        if (!string.IsNullOrEmpty(selectedRepoSlug) && WorkspaceService.HasSelectedWorkspace)
+        {
+            var repoForApi = selectedRepoSlug == "ALL" ? null : selectedRepoSlug;
+            InvokeAsync(async () => await LoadCommitActivity());
+        }
+    }
+
+    private async Task LoadCommitActivity()
+    {
+        // Cosmetic change to force recompile
+        // This method fetches commit and contributor activity data from the API.
+
+        if (string.IsNullOrEmpty(WorkspaceService.SelectedWorkspace))
+        {
+            errorMessage = "Please select a workspace in settings to view commit activity.";
+            commitActivity = null;
+            contributorData = null;
+            return;
+        }
+
+        isLoadingCommits = true;
+        errorMessage = null;
+        try
+        {
+            var url = $"api/analytics/commits/activity?workspace={WorkspaceService.SelectedWorkspace}&groupBy={selectedGrouping}";
+            if (selectedRepoSlug != "ALL") url += $"&repoSlug={selectedRepoSlug}";
+            if (startDate.HasValue) url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            if (endDate.HasValue) url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            
+            // Add user/team filtering
+            if (filterType == "user" && selectedUserId.HasValue) url += $"&userId={selectedUserId.Value}";
+            if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1) url += $"&teamId={selectedTeamId.Value}";
+            
+            url += $"&includePR={includePR}";
+            url += $"&includeData={includeData}";
+            url += $"&includeConfig={includeConfig}";
+            if (showExcluded) url += "&showExcluded=true";
+            commitActivity = await Http.GetFromJsonAsync<CommitActivityDto[]>(url);
+
+            // Also load contributor data
+            var contributorUrl = $"api/analytics/contributors?workspace={WorkspaceService.SelectedWorkspace}";
+            if (selectedRepoSlug != "ALL") contributorUrl += $"&repoSlug={selectedRepoSlug}";
+            if (startDate.HasValue) contributorUrl += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            if (endDate.HasValue) contributorUrl += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            
+            // Add user/team filtering
+            if (filterType == "user" && selectedUserId.HasValue) contributorUrl += $"&userId={selectedUserId.Value}";
+            if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1) contributorUrl += $"&teamId={selectedTeamId.Value}";
+            
+            contributorUrl += $"&groupBy={selectedGrouping}"; // Grouping applies to contributor activity as well
+            if (showExcluded) contributorUrl += "&showExcluded=true";
+            contributorData = await Http.GetFromJsonAsync<ContributorActivityDto[]>(contributorUrl);
+
+            // Fetch individual commit activity for each contributor
+            _individualContributorCommitActivity.Clear();
+            if (contributorData != null)
+            {
+                foreach (var contributor in contributorData.GroupBy(c => c.UserId).Select(g => g.First())) // Get unique contributors
+                {
+                    var individualCommitActivityUrl = $"api/analytics/commits/activity?workspace={WorkspaceService.SelectedWorkspace}&groupBy={selectedGrouping}&userId={contributor.UserId}";
+                    if (selectedRepoSlug != "ALL") individualCommitActivityUrl += $"&repoSlug={selectedRepoSlug}";
+                    if (startDate.HasValue) individualCommitActivityUrl += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+                    if (endDate.HasValue) individualCommitActivityUrl += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+                    individualCommitActivityUrl += $"&includePR={includePR}";
+                    individualCommitActivityUrl += $"&includeData={includeData}";
+                    individualCommitActivityUrl += $"&includeConfig={includeConfig}";
+                    if (showExcluded) individualCommitActivityUrl += "&showExcluded=true";
+                    var individualActivity = await Http.GetFromJsonAsync<CommitActivityDto[]>(individualCommitActivityUrl);
+                    if (individualActivity != null) {
+                        _individualContributorCommitActivity[contributor.UserId] = individualActivity.ToList();
+                    }
+                }
+            }
+            
+            // Update JavaScript variables only after data is successfully loaded
+            await JSRuntime.InvokeVoidAsync("eval", $"window.selectedRepoSlug = '{selectedRepoSlug}';");
+            await JSRuntime.InvokeVoidAsync("eval", $"window.selectedGrouping = '{selectedGrouping}';");
+            await JSRuntime.InvokeVoidAsync("eval", $"window.showExcluded = \"{showExcluded}\";");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            errorMessage = "Unauthorized. Your session might have expired. Please restart the API project.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading commit activity: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingCommits = false;
+            _shouldReinitializeCharts = true; // Flag to reinitialize charts after data load
+        }
+    }
+
+
+
+    // JavaScript interop methods for chart interaction
+    [JSInvokable]
+    public static void HandleChartClick(object dataPoint)
+    {
+        // Handle chart click events from JavaScript
+    }
+
+    [JSInvokable]
+    public void OnChartDataPointClick(string date, string type, string value)
+    {
+        // Update a UI element with the clicked data point info
+        selectedDataPoint = $"{type} for {date}: {value}";
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task ShowCommitDetailsModalFromChart(string dateString, string grouping)
+    {
+        if (commitActivity == null) return;
+
+        DateTime parsedDate;
+        switch (grouping.ToLower())
+        {
+            case "day":
+                parsedDate = DateTime.ParseExact(dateString, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                break;
+            case "week":
+            case "month":
+            case "year":
+                // For week, month, year, the dateString might represent the start of the period.
+                // We need to fetch all commits within that period.
+                parsedDate = DateTime.Parse(dateString);
+                break;
+            default:
+                throw new ArgumentException($"Unknown grouping: {grouping}");
+        }
+
+        var selectedActivity = commitActivity.FirstOrDefault(ca => ca.Date.Date == parsedDate.Date);
+
+        if (selectedActivity != null)
+        {
+            selectedCommitData = selectedActivity;
+            await ShowCommitDetailsModal(selectedActivity.Date, selectedRepoSlug, true, false, false);
+        }
+    }
+
+    private void OnRowRender(RowRenderEventArgs<CommitActivityDto> args)
+    {
+        var data = args.Data;
+        args.Attributes.Add("title",
+            $"Code ++: {data.CodeLinesAdded:N0}\n" +
+            $"Code --: {data.CodeLinesRemoved:N0}\n" +
+            $"Data ++: {data.DataLinesAdded:N0}\n" +
+            $"Data --: {data.DataLinesRemoved:N0}\n" +
+            $"Config ++: {data.ConfigLinesAdded:N0}\n" +
+            $"Config --: {data.ConfigLinesRemoved:N0}"
+        );
+    }
+
+    private void SelectDataPoint(CommitActivityDto data)
+    {
+        selectedCommitData = data;
+        showCommitDetailsModal = true;
+        commitDetailsModalTitle = $"Commits for {data.Date:yyyy-MM-dd}";
+        _ = ShowCommitDetailsModal(data.Date, selectedRepoSlug, true, false, false);
+    }
+
+    private async Task InitializeContributorCharts()
+    {
+        if (contributorData != null && contributorData.Any())
+        {
+            // Convert data for JavaScript with explicit array serialization
+            var chartData = contributorData.Select(c => new
+            {
+                userId = c.UserId,
+                displayName = c.DisplayName,
+                commitCount = c.CommitCount,
+                codeLinesAdded = c.CodeLinesAdded,
+                codeLinesRemoved = c.CodeLinesRemoved,
+                dataLinesAdded = c.DataLinesAdded,
+                dataLinesRemoved = c.DataLinesRemoved,
+                configLinesAdded = c.ConfigLinesAdded,
+                configLinesRemoved = c.ConfigLinesRemoved,
+                docsLinesAdded = c.DocsLinesAdded,
+                docsLinesRemoved = c.DocsLinesRemoved,
+                totalLinesAdded = c.TotalLinesAdded,
+                totalLinesRemoved = c.TotalLinesRemoved
+            }).ToArray();
+
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("initializeContributorCharts", new object[] { chartData });
+            }
+            catch (Exception ex)
+            {
+                _ = ex; // Suppress unused variable warning
+                // No retry here, JS will handle it
+            }
+        }
+    }
+
+    private void CloseCommitDetailsModal()
+    {
+        showCommitDetailsModal = false;
+        commitDetailsList = null;
+        commitDetailsError = null;
+    }
+
+    private IEnumerable<ContributorActivityDto> GetUniqueContributors()
+    {
+        if (contributorData == null) return Enumerable.Empty<ContributorActivityDto>();
+
+        return contributorData
+            .GroupBy(c => new { c.UserId, c.DisplayName, c.AvatarUrl })
+            .Select(g => new ContributorActivityDto // Using the correct DTO type here
+            {
+                UserId = g.Key.UserId,
+                DisplayName = g.Key.DisplayName,
+                AvatarUrl = g.Key.AvatarUrl,
+                CommitCount = g.Sum(x => x.CommitCount),
+                TotalLinesAdded = g.Sum(x => x.TotalLinesAdded),
+                TotalLinesRemoved = g.Sum(x => x.TotalLinesRemoved)
+            })
+            .OrderByDescending(c => c.CommitCount);
+    }
+
+    private string GetContributorStats(int userId)
+    {
+        if (contributorData == null) return string.Empty;
+
+        var stats = contributorData.Where(c => c.UserId == userId).ToList();
+        if (!stats.Any()) return string.Empty;
+
+        var totalCommits = stats.Sum(s => s.CommitCount);
+        var totalAdded = stats.Sum(s => s.TotalLinesAdded);
+        var totalRemoved = stats.Sum(s => s.TotalLinesRemoved);
+        return $"Commits: {totalCommits}, Lines Added: {totalAdded}, Lines Removed: {totalRemoved}";
+    }
+
+    private void HandleContributorChartClick(int userId, DateTime date)
+    {
+        var user = contributorData?.FirstOrDefault(c => c.UserId == userId);
+        if (user != null)
+        {
+            NavigateToUserCommits(userId, user.DisplayName, date, selectedRepoSlug);
+        }
+    }
+
+    private void NavigateToUserCommits(int userId, string userName, DateTime? commitDate, string? repoSlug)
+    {
+        var url = $"/user/{userId}/commits";
+        var queryParams = new List<string>();
+        
+        if (commitDate.HasValue)
+        {
+            queryParams.Add($"StartDate={commitDate.Value:yyyy-MM-dd}");
+            queryParams.Add($"EndDate={commitDate.Value:yyyy-MM-dd}");
+        }
+        if (!string.IsNullOrEmpty(repoSlug) && repoSlug != "ALL")
+        {
+            queryParams.Add($"RepoSlug={Uri.EscapeDataString(repoSlug)}");
+        }
+        
+        if (queryParams.Any())
+        {
+            url += "?" + string.Join("&", queryParams);
+        }
+        
+        Navigation.NavigateTo(url);
+    }
+
+    private async Task ShowCommitDetailsModal(DateTime date, string? repoSlug, bool includePR, bool includeData, bool includeConfig)
+    {
+        isLoadingCommitDetails = true;
+        commitDetailsError = null;
+        try
+        {
+            var url = $"/api/analytics/commits/details?date={date:yyyy-MM-dd}&includePR={includePR}&includeData={includeData}&includeConfig={includeConfig}";
+            if (!string.IsNullOrEmpty(repoSlug) && repoSlug != "ALL") url += $"&repoSlug={repoSlug}";
+
+            var result = await Http.GetFromJsonAsync<List<CommitDetailDto>>(url);
+            commitDetailsList = result;
+        }
+        catch (Exception ex)
+        {
+            commitDetailsError = $"Error loading commit details: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingCommitDetails = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetDashboardRepositoryInfo()
+    {
+        if (selectedRepoSlug == "ALL")
+        {
+            return "All Repositories";
+        }
+        else if (!string.IsNullOrEmpty(selectedRepoSlug))
+        {
+            var selectedRepo = repositories?.FirstOrDefault(r => r.Slug == selectedRepoSlug);
+            return selectedRepo?.Name ?? selectedRepoSlug;
+        }
+        return "All Repositories";
+    }
+
+    // Event handlers for filtering
+    private async Task OnUserSelected(int? userId)
+    {
+        selectedUserId = userId;
+    }
+
+    private async Task OnTeamSelected(int? teamId)
+    {
+        selectedTeamId = teamId;
+    }
+
+    private async Task OnFilterTypeChanged(string newFilterType)
+    {
+        filterType = newFilterType;
+        // Clear the opposite filter when switching
+        if (filterType == "user")
+        {
+            selectedTeamId = null;
+        }
+        else if (filterType == "team")
+        {
+            selectedUserId = null;
+        }
+    }
+
+    private async Task OnSearchButtonClicked()
+    {
+        // Don't update JS variables here - they will be updated after data loads
+        await RefreshDashboardData();
+    }
+
+    private async Task LoadUsersAndTeams()
+    {
+        try
+        {
+            // Load users
+            isLoadingUsers = true;
+            StateHasChanged();
+            users = await Http.GetFromJsonAsync<IEnumerable<UserDto>>("/api/analytics/users");
+            
+            // Load teams
+            isLoadingTeams = true;
+            StateHasChanged();
+            teams = await Http.GetFromJsonAsync<IEnumerable<TeamSummaryDto>>("/api/analytics/teams");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading users/teams: {ex.Message}");
+            // Don't set errorMessage here as it might interfere with main dashboard functionality
+        }
+        finally
+        {
+            isLoadingUsers = false;
+            isLoadingTeams = false;
+            StateHasChanged();
+        }
+    }
+
+    public class DashboardSummary
+    {
+        public List<CommitActivityDto> CommitActivities { get; set; } = new();
+        public List<ContributorActivityDto> ContributorActivities { get; set; } = new();
+    }
+
+
+} 

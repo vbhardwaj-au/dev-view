@@ -1,0 +1,226 @@
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.JSInterop;
+
+namespace Web.Services
+{
+    public class JwtAuthStateProvider : AuthenticationStateProvider
+    {
+        private readonly IJSRuntime _jsRuntime;
+        private readonly ILogger<JwtAuthStateProvider> _logger;
+        private ClaimsPrincipal _anonymous = new(new ClaimsIdentity());
+        private AuthenticationState? _cachedAuthState;
+        
+        public JwtAuthStateProvider(IJSRuntime jsRuntime, ILogger<JwtAuthStateProvider> logger)
+        {
+            _jsRuntime = jsRuntime;
+            _logger = logger;
+        }
+
+        public override async Task<AuthenticationState> GetAuthenticationStateAsync()
+        {
+            // Return cached state if available
+            if (_cachedAuthState != null)
+            {
+                return _cachedAuthState;
+            }
+
+            try
+            {
+                // Try to get token from localStorage with timeout
+                var token = await _jsRuntime.InvokeAsync<string>("authHelper.getToken", TimeSpan.FromSeconds(10));
+                
+                if (string.IsNullOrEmpty(token))
+                {
+                    _logger.LogInformation("No token found in localStorage");
+                    _cachedAuthState = new AuthenticationState(_anonymous);
+                    return _cachedAuthState;
+                }
+                
+                var (name, roles) = ParseJwtToken(token);
+                if (string.IsNullOrEmpty(name))
+                {
+                    _logger.LogWarning("Invalid or expired token found");
+                    _cachedAuthState = new AuthenticationState(_anonymous);
+                    return _cachedAuthState;
+                }
+                
+                // Create authenticated user
+                var claims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.Name, name)
+                };
+                foreach (var r in roles)
+                {
+                    claims.Add(new Claim(ClaimTypes.Role, r));
+                }
+                
+                var identity = new ClaimsIdentity(claims, authenticationType: "JwtAuth");
+                var user = new ClaimsPrincipal(identity);
+                
+                // Set token for HTTP client
+                BearerHandler.Token = token;
+                
+                _logger.LogInformation($"Authentication restored for user: {name}");
+                _cachedAuthState = new AuthenticationState(user);
+                return _cachedAuthState;
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("JavaScript interop"))
+            {
+                // This happens during prerendering - wait and retry
+                _logger.LogDebug("JS interop not available, waiting...");
+                await Task.Delay(100);
+                
+                try
+                {
+                    var token = await _jsRuntime.InvokeAsync<string>("authHelper.getToken", TimeSpan.FromSeconds(5));
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        var (name, roles) = ParseJwtToken(token);
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            var claims = new List<Claim> { new Claim(ClaimTypes.Name, name) };
+                            foreach (var r in roles)
+                            {
+                                claims.Add(new Claim(ClaimTypes.Role, r));
+                            }
+                            
+                            var identity = new ClaimsIdentity(claims, "JwtAuth");
+                            var user = new ClaimsPrincipal(identity);
+                            BearerHandler.Token = token;
+                            
+                            _logger.LogInformation($"Authentication restored for user: {name} (after retry)");
+                            _cachedAuthState = new AuthenticationState(user);
+                            return _cachedAuthState;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Still not available
+                }
+                
+                _cachedAuthState = new AuthenticationState(_anonymous);
+                return _cachedAuthState;
+            }
+            catch (TaskCanceledException)
+            {
+                _logger.LogWarning("Timeout while getting authentication token");
+                _cachedAuthState = new AuthenticationState(_anonymous);
+                return _cachedAuthState;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting authentication state");
+                _cachedAuthState = new AuthenticationState(_anonymous);
+                return _cachedAuthState;
+            }
+        }
+
+        public async Task SetUserAsync(string name, string[] roles, string token)
+        {
+            // Store token in localStorage
+            await _jsRuntime.InvokeVoidAsync("authHelper.saveToken", token);
+            
+            // Set token for HTTP client
+            BearerHandler.Token = token;
+            
+            // Clear cached state
+            _cachedAuthState = null;
+            
+            // Notify that auth state has changed
+            NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
+        }
+
+        public async Task ClearAsync()
+        {
+            try
+            {
+                await _jsRuntime.InvokeVoidAsync("authHelper.removeToken");
+            }
+            catch { }
+            
+            BearerHandler.Token = null;
+            
+            // Set cached state to anonymous
+            _cachedAuthState = new AuthenticationState(_anonymous);
+            
+            // Notify that auth state has changed
+            NotifyAuthenticationStateChanged(Task.FromResult(_cachedAuthState));
+        }
+        
+        private (string name, string[] roles) ParseJwtToken(string token)
+        {
+            try
+            {
+                var parts = token.Split('.');
+                if (parts.Length != 3)
+                    return ("", Array.Empty<string>());
+
+                var payload = parts[1];
+                var jsonBytes = ParseBase64WithoutPadding(payload);
+                var json = Encoding.UTF8.GetString(jsonBytes);
+                
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                
+                // Check if token is expired
+                if (root.TryGetProperty("exp", out var expElement))
+                {
+                    var exp = expElement.GetInt64();
+                    var expDate = DateTimeOffset.FromUnixTimeSeconds(exp);
+                    if (expDate < DateTimeOffset.UtcNow)
+                    {
+                        _logger.LogInformation("Token is expired");
+                        return ("", Array.Empty<string>());
+                    }
+                }
+                
+                var name = root.TryGetProperty("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name", out var nameElement) 
+                    ? nameElement.GetString() ?? ""
+                    : root.TryGetProperty("unique_name", out var uniqueNameElement) 
+                        ? uniqueNameElement.GetString() ?? ""
+                        : "";
+                
+                var roles = new List<string>();
+                if (root.TryGetProperty("http://schemas.microsoft.com/ws/2008/06/identity/claims/role", out var rolesElement))
+                {
+                    if (rolesElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var role in rolesElement.EnumerateArray())
+                        {
+                            var roleValue = role.GetString();
+                            if (!string.IsNullOrEmpty(roleValue))
+                                roles.Add(roleValue);
+                        }
+                    }
+                    else if (rolesElement.ValueKind == JsonValueKind.String)
+                    {
+                        var roleValue = rolesElement.GetString();
+                        if (!string.IsNullOrEmpty(roleValue))
+                            roles.Add(roleValue);
+                    }
+                }
+                
+                return (name, roles.ToArray());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to parse JWT token");
+                return ("", Array.Empty<string>());
+            }
+        }
+
+        private byte[] ParseBase64WithoutPadding(string base64)
+        {
+            switch (base64.Length % 4)
+            {
+                case 2: base64 += "=="; break;
+                case 3: base64 += "="; break;
+            }
+            return Convert.FromBase64String(base64);
+        }
+    }
+}

@@ -1,0 +1,626 @@
+@attribute [Authorize(Roles="Admin")]
+@page "/admin/user-management"
+@using System.Net.Http.Json
+@using System.ComponentModel.DataAnnotations
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject ILogger<UserManagement> Logger
+
+@rendermode InteractiveServer
+
+<PageTitle>User Management - DevView</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>
+                    <i class="bi bi-person-gear me-2"></i>
+                    User Management
+                </h1>
+                <button class="btn btn-success" @onclick="ShowCreateUserModal">
+                    <i class="bi bi-person-plus me-2"></i>
+                    Create New User
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(message))
+            {
+                <div class="alert @(messageType == "success" ? "alert-success" : messageType == "warning" ? "alert-warning" : "alert-danger") alert-dismissible fade show" role="alert">
+                    @((MarkupString)message)
+                    <button type="button" class="btn-close" @onclick="() => message = string.Empty"></button>
+                </div>
+            }
+
+            @if (authUsers == null)
+            {
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading users...</p>
+                </div>
+            }
+            else
+            {
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-people me-2"></i>
+                            System Users (@authUsers.Count())
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Display Name</th>
+                                        <th>Roles</th>
+                                        <th>Status</th>
+                                        <th>Created</th>
+                                        <th>Modified</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var user in authUsers)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <code>@user.Username</code>
+                                            </td>
+                                            <td>
+                                                <strong>@user.DisplayName</strong>
+                                            </td>
+                                            <td>
+                                                @if (user.Roles.Any())
+                                                {
+                                                    @foreach (var role in user.Roles)
+                                                    {
+                                                        <span class="badge @GetRoleBadgeClass(role) me-1">@role</span>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">No roles</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (user.IsActive)
+                                                {
+                                                    <span class="badge bg-success">Active</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-danger">Blocked</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @user.CreatedOn.ToString("MMM dd, yyyy")
+                                            </td>
+                                            <td>
+                                                @(user.ModifiedOn?.ToString("MMM dd, yyyy") ?? "-")
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <button class="btn btn-outline-primary" @onclick="() => ShowEditUserModal(user)" title="Edit">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-warning" @onclick="() => ShowResetPasswordModal(user)" title="Reset Password">
+                                                        <i class="bi bi-key"></i>
+                                                    </button>
+                                                    @if (user.IsActive)
+                                                    {
+                                                        <button class="btn btn-outline-danger" @onclick="() => BlockUser(user)" title="Block User">
+                                                            <i class="bi bi-lock"></i>
+                                                        </button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button class="btn btn-outline-success" @onclick="() => UnblockUser(user)" title="Unblock User">
+                                                            <i class="bi bi-unlock"></i>
+                                                        </button>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Create User Modal -->
+<div class="modal fade" id="createUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-person-plus me-2"></i>Create New User
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="newUsername" class="form-label">Username <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="newUsername" @bind="newUser.Username" placeholder="Enter username">
+                </div>
+                <div class="mb-3">
+                    <label for="newPassword" class="form-label">Password <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input type="@(showNewPassword ? "text" : "password")" class="form-control" id="newPassword" @bind="newUser.Password" placeholder="Enter password">
+                        <button class="btn btn-outline-secondary" type="button" @onclick="() => showNewPassword = !showNewPassword">
+                            <i class="bi @(showNewPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                        </button>
+                    </div>
+                    <small class="form-text text-muted">Password should be at least 8 characters with mix of letters, numbers and symbols</small>
+                </div>
+                <div class="mb-3">
+                    <label for="newDisplayName" class="form-label">Display Name</label>
+                    <input type="text" class="form-control" id="newDisplayName" @bind="newUser.DisplayName" placeholder="Enter display name (optional)">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Roles</label>
+                    <div class="border rounded p-2">
+                        @if (availableRoles != null)
+                        {
+                            @foreach (var role in availableRoles)
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" 
+                                           @onchange="(e) => ToggleRole(newUser.Roles, role, (bool)e.Value!)"
+                                           checked="@newUser.Roles.Contains(role)"
+                                           id="new_role_@role">
+                                    <label class="form-check-label" for="new_role_@role">
+                                        <span class="badge @GetRoleBadgeClass(role) me-1">@role</span>
+                                    </label>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="CreateUser" disabled="@isCreating">
+                    @if (isCreating)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    }
+                    <i class="bi bi-person-plus me-1"></i>Create User
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-pencil me-2"></i>Edit User
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                @if (editUser != null)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" value="@editUser.Username" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDisplayName" class="form-label">Display Name</label>
+                        <input type="text" class="form-control" id="editDisplayName" @bind="editUserRequest.DisplayName">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" @bind="editUserRequest.IsActive" id="editUserActive">
+                            <label class="form-check-label" for="editUserActive">
+                                User is active
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Roles</label>
+                        <div class="border rounded p-2">
+                            @if (availableRoles != null)
+                            {
+                                @foreach (var role in availableRoles)
+                                {
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" 
+                                               @onchange="(e) => ToggleRole(editUserRequest.Roles, role, (bool)e.Value!)"
+                                               checked="@editUserRequest.Roles.Contains(role)"
+                                               id="edit_role_@role">
+                                        <label class="form-check-label" for="edit_role_@role">
+                                            <span class="badge @GetRoleBadgeClass(role) me-1">@role</span>
+                                        </label>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="UpdateUser" disabled="@isUpdating">
+                    @if (isUpdating)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    }
+                    <i class="bi bi-check-circle me-1"></i>Update User
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-key me-2"></i>Reset Password
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                @if (resetPasswordUser != null)
+                {
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        You are about to reset the password for user: <strong>@resetPasswordUser.Username</strong>
+                    </div>
+                    <div class="mb-3">
+                        <label for="resetPassword" class="form-label">New Password <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="@(showResetPassword ? "text" : "password")" class="form-control" id="resetPassword" 
+                                   @bind="resetPasswordRequest.NewPassword" placeholder="Enter new password">
+                            <button class="btn btn-outline-secondary" type="button" @onclick="() => showResetPassword = !showResetPassword">
+                                <i class="bi @(showResetPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                            </button>
+                        </div>
+                        <small class="form-text text-muted">Password should be at least 8 characters with mix of letters, numbers and symbols</small>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" @onclick="ResetPassword" disabled="@isResetting">
+                    @if (isResetting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    }
+                    <i class="bi bi-key me-1"></i>Reset Password
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private class AuthUserDto
+    {
+        public int Id { get; set; }
+        public string Username { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public DateTime CreatedOn { get; set; }
+        public DateTime? ModifiedOn { get; set; }
+        public List<string> Roles { get; set; } = new();
+    }
+
+    private class CreateUserRequest
+    {
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public List<string> Roles { get; set; } = new();
+    }
+
+    private class UpdateUserRequest
+    {
+        public string DisplayName { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public List<string> Roles { get; set; } = new();
+    }
+
+    private class ResetPasswordRequest
+    {
+        public int UserId { get; set; }
+        public string NewPassword { get; set; } = string.Empty;
+    }
+
+    private IEnumerable<AuthUserDto>? authUsers;
+    private IEnumerable<string>? availableRoles;
+    
+    private CreateUserRequest newUser = new();
+    private AuthUserDto? editUser;
+    private UpdateUserRequest editUserRequest = new();
+    private AuthUserDto? resetPasswordUser;
+    private ResetPasswordRequest resetPasswordRequest = new();
+    
+    private bool isCreating = false;
+    private bool isUpdating = false;
+    private bool isResetting = false;
+    private bool showNewPassword = false;
+    private bool showResetPassword = false;
+    
+    private string message = "";
+    private string messageType = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+        await LoadRoles();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            authUsers = await Http.GetFromJsonAsync<IEnumerable<AuthUserDto>>("api/UserManagement");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading users: {ex.Message}", "error");
+            Logger.LogError(ex, "Error loading users");
+        }
+    }
+
+    private async Task LoadRoles()
+    {
+        try
+        {
+            availableRoles = await Http.GetFromJsonAsync<IEnumerable<string>>("api/UserManagement/roles");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading roles: {ex.Message}", "error");
+            Logger.LogError(ex, "Error loading roles");
+        }
+    }
+
+    private async Task ShowCreateUserModal()
+    {
+        newUser = new CreateUserRequest();
+        showNewPassword = false;
+        await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('createUserModal')).show()");
+    }
+
+    private async Task ShowEditUserModal(AuthUserDto user)
+    {
+        editUser = user;
+        editUserRequest = new UpdateUserRequest
+        {
+            DisplayName = user.DisplayName,
+            IsActive = user.IsActive,
+            Roles = new List<string>(user.Roles)
+        };
+        await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('editUserModal')).show()");
+    }
+
+    private async Task ShowResetPasswordModal(AuthUserDto user)
+    {
+        resetPasswordUser = user;
+        resetPasswordRequest = new ResetPasswordRequest { UserId = user.Id };
+        showResetPassword = false;
+        await JSRuntime.InvokeVoidAsync("eval", "new bootstrap.Modal(document.getElementById('resetPasswordModal')).show()");
+    }
+
+    private async Task CreateUser()
+    {
+        if (string.IsNullOrWhiteSpace(newUser.Username) || string.IsNullOrWhiteSpace(newUser.Password))
+        {
+            ShowMessage("Username and password are required", "error");
+            return;
+        }
+
+        if (newUser.Password.Length < 8)
+        {
+            ShowMessage("Password must be at least 8 characters", "error");
+            return;
+        }
+
+        isCreating = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/UserManagement", newUser);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                ShowMessage($"User '{newUser.Username}' created successfully!", "success");
+                await LoadUsers();
+                await CloseModal("createUserModal");
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Error creating user: {error}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error creating user: {ex.Message}", "error");
+            Logger.LogError(ex, "Error creating user");
+        }
+        finally
+        {
+            isCreating = false;
+        }
+    }
+
+    private async Task UpdateUser()
+    {
+        if (editUser == null) return;
+
+        isUpdating = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"api/UserManagement/{editUser.Id}", editUserRequest);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                ShowMessage($"User '{editUser.Username}' updated successfully!", "success");
+                await LoadUsers();
+                await CloseModal("editUserModal");
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Error updating user: {error}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error updating user: {ex.Message}", "error");
+            Logger.LogError(ex, "Error updating user");
+        }
+        finally
+        {
+            isUpdating = false;
+        }
+    }
+
+    private async Task ResetPassword()
+    {
+        if (resetPasswordUser == null || string.IsNullOrWhiteSpace(resetPasswordRequest.NewPassword))
+        {
+            ShowMessage("New password is required", "error");
+            return;
+        }
+
+        if (resetPasswordRequest.NewPassword.Length < 8)
+        {
+            ShowMessage("Password must be at least 8 characters", "error");
+            return;
+        }
+
+        isResetting = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync($"api/UserManagement/{resetPasswordUser.Id}/reset-password", resetPasswordRequest);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                ShowMessage($"Password reset successfully for user '{resetPasswordUser.Username}'!", "success");
+                await CloseModal("resetPasswordModal");
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Error resetting password: {error}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error resetting password: {ex.Message}", "error");
+            Logger.LogError(ex, "Error resetting password");
+        }
+        finally
+        {
+            isResetting = false;
+        }
+    }
+
+    private async Task BlockUser(AuthUserDto user)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to block user '{user.Username}'?");
+        if (!confirmed) return;
+
+        try
+        {
+            var response = await Http.PostAsync($"api/UserManagement/{user.Id}/block", null);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                ShowMessage($"User '{user.Username}' blocked successfully!", "success");
+                await LoadUsers();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Error blocking user: {error}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error blocking user: {ex.Message}", "error");
+            Logger.LogError(ex, "Error blocking user");
+        }
+    }
+
+    private async Task UnblockUser(AuthUserDto user)
+    {
+        try
+        {
+            var response = await Http.PostAsync($"api/UserManagement/{user.Id}/unblock", null);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                ShowMessage($"User '{user.Username}' unblocked successfully!", "success");
+                await LoadUsers();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Error unblocking user: {error}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error unblocking user: {ex.Message}", "error");
+            Logger.LogError(ex, "Error unblocking user");
+        }
+    }
+
+    private void ToggleRole(List<string> roles, string role, bool isChecked)
+    {
+        if (isChecked && !roles.Contains(role))
+        {
+            roles.Add(role);
+        }
+        else if (!isChecked && roles.Contains(role))
+        {
+            roles.Remove(role);
+        }
+    }
+
+    private string GetRoleBadgeClass(string role)
+    {
+        return role switch
+        {
+            "Admin" => "bg-danger",
+            "Manager" => "bg-primary",
+            "User" => "bg-success",
+            _ => "bg-secondary"
+        };
+    }
+
+    private async Task CloseModal(string modalId)
+    {
+        await JSRuntime.InvokeVoidAsync("eval", $@"
+            const modal = bootstrap.Modal.getInstance(document.getElementById('{modalId}'));
+            if(modal) modal.hide();
+        ");
+    }
+
+    private void ShowMessage(string msg, string type)
+    {
+        message = msg;
+        messageType = type;
+    }
+}

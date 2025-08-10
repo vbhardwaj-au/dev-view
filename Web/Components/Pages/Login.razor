@@ -1,0 +1,100 @@
+@attribute [AllowAnonymous]
+@page "/login"
+@using Web.Services
+@using System.ComponentModel.DataAnnotations
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject ILogger<Login> Logger
+@rendermode InteractiveServer
+
+<div class="container mt-5" style="max-width:420px;">
+    <h3 class="mb-3">Sign in</h3>
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger">@error</div>
+    }
+    <EditForm Model="@model" OnValidSubmit="@HandleLogin">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label">Username</label>
+            <InputText class="form-control" @bind-Value="model.Username" />
+            <ValidationMessage For="@(() => model.Username)" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Password</label>
+            <InputText type="password" class="form-control" @bind-Value="model.Password" />
+            <ValidationMessage For="@(() => model.Password)" />
+        </div>
+        <button type="submit" class="btn btn-primary w-100" disabled="@busy">
+            @if (busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+            Sign in
+        </button>
+    </EditForm>
+</div>
+
+@code {
+    private LoginModel model = new();
+    private string? error;
+    private bool busy;
+
+    protected override void OnInitialized()
+    {
+        Logger.LogInformation("Login page initialized");
+    }
+
+    private async Task HandleLogin()
+    {
+        try
+        {
+            Logger.LogInformation("HandleLogin called for user: {Username}", model.Username);
+            error = null;
+            
+            if (string.IsNullOrWhiteSpace(model.Username) || string.IsNullOrWhiteSpace(model.Password))
+            {
+                error = "Username and password are required.";
+                Logger.LogWarning("Login validation failed - missing credentials");
+                return;
+            }
+            
+            busy = true;
+            StateHasChanged(); // Force UI update to show spinner
+            
+            Logger.LogInformation("Calling Auth.LoginAsync for user: {Username}", model.Username);
+            var ok = await Auth.LoginAsync(model.Username, model.Password);
+            
+            busy = false;
+            
+            if (ok)
+            {
+                Logger.LogInformation("Login successful for user: {Username}", model.Username);
+                // Small delay to ensure auth state is propagated
+                await Task.Delay(200);
+                StateHasChanged();
+                Logger.LogInformation("Navigating to /dashboard");
+                Nav.NavigateTo("/dashboard", forceLoad: false);
+            }
+            else
+            {
+                Logger.LogWarning("Login failed for user: {Username}", model.Username);
+                error = "Invalid username or password";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Login error for user: {Username}", model.Username);
+            error = $"Login error: {ex.Message}";
+            busy = false;
+        }
+    }
+
+    public class LoginModel
+    {
+        [Required(ErrorMessage = "Username is required")]
+        public string Username { get; set; } = string.Empty;
+        
+        [Required(ErrorMessage = "Password is required")]
+        public string Password { get; set; } = string.Empty;
+    }
+}
+
+

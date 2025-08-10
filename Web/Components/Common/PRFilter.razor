@@ -1,0 +1,114 @@
+@using Radzen
+@using Radzen.Blazor
+@using Web.Services
+@using System.Net.Http.Json
+
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="mb-3">
+            <label for="repoSelect" class="form-label fw-bold">Select Repository</label>
+            @if (IsLoadingRepos)
+            {
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span>Loading repositories...</span>
+                </div>
+            }
+            else if (Repositories != null && Repositories.Any())
+            {
+                <RadzenDropDown Data="@Repositories.OrderBy(r => r.Name)"
+                              TextProperty="Name"
+                              ValueProperty="Slug"
+                              AllowClear="true"
+                              AllowFiltering="true"
+                              FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                              Placeholder="Search repositories..."
+                              Value="@SelectedRepoSlug"
+                              Change="@(args => OnRepositoryChanged(args))"
+                              class="w-100" />
+            }
+            else
+            {
+                <div class="alert alert-warning">
+                    No repositories found. Please check your configuration.
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Date Range Selection -->
+    <div class="col-md-6">
+        <div class="mb-3">
+            <label class="form-label fw-bold">Date Range</label>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <RadzenDatePicker @bind-Value="StartDate" DateFormat="MM/dd/yyyy" Placeholder="Start Date" 
+                                    Change="@(() => OnDateRangeChanged(StartDate))" class="w-100" />
+                </div>
+                <div class="col-md-6">
+                    <RadzenDatePicker @bind-Value="EndDate" DateFormat="MM/dd/yyyy" Placeholder="End Date" 
+                                    Change="@(() => OnDateRangeChanged(EndDate))" class="w-100" />
+                </div>
+            </div>
+            <div class="mt-2">
+                <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Text="Last 7 Days" Click="@(() => SetDateRange(7))" class="me-1" />
+                <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Text="Last 30 Days" Click="@(() => SetDateRange(30))" class="me-1" />
+                <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Text="Last 90 Days" Click="@(() => SetDateRange(90))" class="me-1" />
+                <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Text="All Time" Click="@(() => SetDateRange(null))" />
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public bool IsLoadingRepos { get; set; }
+
+    [Parameter]
+    public IEnumerable<RepositorySummaryDto>? Repositories { get; set;}
+
+    [Parameter]
+    public string? SelectedRepoSlug { get; set; }
+
+    [Parameter]
+    public DateTime? StartDate { get; set; }
+
+    [Parameter]
+    public DateTime? EndDate { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnRepositorySelected { get; set; }
+
+    [Parameter]
+    public EventCallback<(DateTime? start, DateTime? end)> OnDateRangeUpdated { get; set; }
+
+    private async Task OnRepositoryChanged(object? value)
+    {
+        var slug = value?.ToString();
+        await OnRepositorySelected.InvokeAsync(slug);
+        SelectedRepoSlug = slug;
+    }
+
+    private async Task OnDateRangeChanged(DateTime? date)
+    {
+        await OnDateRangeUpdated.InvokeAsync((StartDate, EndDate));
+    }
+
+    private async Task SetDateRange(int? days)
+    {
+        if (days.HasValue)
+        {
+            EndDate = DateTime.Today;
+            StartDate = EndDate.Value.AddDays(-days.Value);
+        }
+        else
+        {
+            StartDate = null;
+            EndDate = null;
+        }
+        await OnDateRangeUpdated.InvokeAsync((StartDate, EndDate));
+    }
+} 

@@ -1,0 +1,397 @@
+
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            📊 @Title
+            @if (!string.IsNullOrEmpty(RepositoryInfo))
+            {
+                <span class="text-muted">- @RepositoryInfo</span>
+            }
+        </h5>
+    </div>
+    <div class="card-body">
+        <div style="position: relative; height: 400px;">
+            <canvas id="@ChartId"></canvas>
+            @if (IsLoading)
+            {
+                <div class="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100 bg-white bg-opacity-75">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading chart...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Loading chart data...</p>
+                    </div>
+                </div>
+            }
+            @if (Data == null || !Data.Any())
+            {
+                <div class="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100">
+                    <div class="text-center text-muted">
+                        <i class="bi bi-chart-line" style="font-size: 3rem;"></i>
+                        <p class="mt-2">No data available. Please select a repository and date range.</p>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<CommitActivityDto>? Data { get; set; }
+    [Parameter] public string Title { get; set; } = "Commit Activity Over Time";
+    [Parameter] public string ChartId { get; set; } = "commitActivityChart";
+    [Parameter] public string GroupBy { get; set; } = "Day";
+    [Parameter] public string? RepositoryInfo { get; set; }
+    [Parameter] public bool IsLoading { get; set; } = false;
+    [Parameter] public EventCallback<CommitActivityDto> OnDataPointClick { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Data != null && Data.Any())
+        {
+            await InitializeChart();
+        }
+    }
+
+    private async Task InitializeChart()
+    {
+        if (Data != null && Data.Any())
+        {
+            var chartData = Data.Select(c => new
+            {
+                date = c.Date.ToString("yyyy-MM-dd"),
+                commitCount = c.CommitCount,
+                codeLinesAdded = c.CodeLinesAdded,
+                codeLinesRemoved = c.CodeLinesRemoved,
+                dataLinesAdded = c.DataLinesAdded,
+                dataLinesRemoved = c.DataLinesRemoved,
+                configLinesAdded = c.ConfigLinesAdded,
+                configLinesRemoved = c.ConfigLinesRemoved,
+                docsLinesAdded = c.DocsLinesAdded,
+                docsLinesRemoved = c.DocsLinesRemoved,
+                totalLinesAdded = c.TotalLinesAdded,
+                totalLinesRemoved = c.TotalLinesRemoved
+            }).ToArray();
+
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("initializeCommitActivityChart", ChartId, chartData, GroupBy);
+            }
+            catch (Exception ex)
+            {
+                // Handle initialization errors gracefully
+                Console.WriteLine($"Chart initialization error: {ex.Message}");
+            }
+        }
+    }
+
+    public async Task RefreshChart()
+    {
+        await InitializeChart();
+    }
+}
+
+<script>
+    window.initializeCommitActivityChart = (chartId, data, grouping) => {
+        // Validate data is an array
+        if (!Array.isArray(data)) {
+            console.error('Data is not an array:', typeof data, data);
+            return;
+        }
+        
+        if (data.length === 0) {
+            console.warn('Data array is empty');
+            return;
+        }
+        
+        // Check if DOM element exists
+        const chartElement = document.getElementById(chartId);
+        if (!chartElement) {
+            console.error(`Chart canvas element ${chartId} not found. Retrying with requestAnimationFrame...`);
+            requestAnimationFrame(() => window.initializeCommitActivityChart(chartId, data, grouping));
+            return;
+        }
+        
+        // Check if Chart.js is loaded
+        if (typeof Chart === 'undefined') {
+            console.error('Chart.js is not loaded yet. Retrying with requestAnimationFrame...');
+            requestAnimationFrame(() => window.initializeCommitActivityChart(chartId, data, grouping));
+            return;
+        }
+        
+        const ctx = chartElement.getContext('2d');
+        
+        // Destroy existing chart if it exists
+        if (window.commitActivityCharts === undefined) {
+            window.commitActivityCharts = {};
+        }
+        
+        if (window.commitActivityCharts[chartId]) {
+            if (typeof window.commitActivityCharts[chartId].destroy === 'function') {
+                console.log(`Destroying existing chart ${chartId}`);
+                window.commitActivityCharts[chartId].destroy();
+            }
+        }
+        
+        // Prepare data for Chart.js
+        const labels = data.map(item => {
+            const date = new Date(item.date);
+            if (grouping === 'Month') {
+                return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            } else if (grouping === 'Week') {
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            } else {
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+        });
+        
+        const commitCounts = data.map(item => item.commitCount);
+        const codeAdded = data.map(item => item.codeLinesAdded);
+        const codeRemoved = data.map(item => item.codeLinesRemoved);
+        const dataAdded = data.map(item => item.dataLinesAdded || 0);
+        const dataRemoved = data.map(item => item.dataLinesRemoved || 0);
+        const configAdded = data.map(item => item.configLinesAdded || 0);
+        const configRemoved = data.map(item => item.configLinesRemoved || 0);
+        const totalAdded = data.map(item => item.totalLinesAdded);
+        const totalRemoved = data.map(item => item.totalLinesRemoved);
+        
+        window.commitActivityCharts[chartId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Commits',
+                        data: commitCounts,
+                        borderColor: 'rgb(54, 162, 235)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointHoverRadius: 8,
+                        yAxisID: 'y',
+                        hidden: false
+                    },
+                    {
+                        label: 'Total ++',
+                        data: totalAdded,
+                        borderColor: 'rgb(34, 197, 94)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointHoverRadius: 8,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Total --',
+                        data: totalRemoved,
+                        borderColor: 'rgb(239, 68, 68)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointHoverRadius: 8,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Code ++',
+                        data: codeAdded,
+                        borderColor: 'rgb(22, 163, 74)',
+                        backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y',
+                        hidden: true
+                    },
+                    {
+                        label: 'Code --',
+                        data: codeRemoved,
+                        borderColor: 'rgb(220, 38, 38)',
+                        backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y',
+                        hidden: true
+                    },
+                    {
+                        label: 'Data ++',
+                        data: dataAdded,
+                        borderColor: 'rgb(147, 51, 234)',
+                        backgroundColor: 'rgba(147, 51, 234, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y',
+                        hidden: true
+                    },
+                    {
+                        label: 'Data --',
+                        data: dataRemoved,
+                        borderColor: 'rgb(126, 34, 206)',
+                        backgroundColor: 'rgba(126, 34, 206, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y',
+                        hidden: true
+                    },
+                    {
+                        label: 'Config ++',
+                        data: configAdded,
+                        borderColor: 'rgb(245, 158, 11)',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y',
+                        hidden: true
+                    },
+                    {
+                        label: 'Config --',
+                        data: configRemoved,
+                        borderColor: 'rgb(217, 119, 6)',
+                        backgroundColor: 'rgba(217, 119, 6, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y',
+                        hidden: true
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Repository Activity Timeline',
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        }
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            usePointStyle: true,
+                            pointStyle: 'circle'
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                const dataIndex = context[0].dataIndex;
+                                const date = new Date(data[dataIndex].date);
+                                return date.toLocaleDateString('en-US', { 
+                                    weekday: 'long', 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                });
+                            },
+                            label: function(context) {
+                                const dataIndex = context.dataIndex;
+                                const item = data[dataIndex];
+                                const label = context.dataset.label;
+                                
+                                switch(label) {
+                                    case 'Commits':
+                                        return `📝 Commits: ${item.commitCount}`;
+                                    case 'Total ++':
+                                        return `➕ Total ++: ${item.totalLinesAdded.toLocaleString()} lines`;
+                                    case 'Total --':
+                                        return `➖ Total --: ${item.totalLinesRemoved.toLocaleString()} lines`;
+                                    case 'Code ++':
+                                        return `🧑‍💻 Code ++: ${item.codeLinesAdded.toLocaleString()} lines`;
+                                    case 'Code --':
+                                        return `🧑‍💻 Code --: ${item.codeLinesRemoved.toLocaleString()} lines`;
+                                    case 'Data ++':
+                                        return `🗄️ Data ++: ${item.dataLinesAdded.toLocaleString()} lines`;
+                                    case 'Data --':
+                                        return `🗄️ Data --: ${item.dataLinesRemoved.toLocaleString()} lines`;
+                                    case 'Config ++':
+                                        return `🛠️ Config ++: ${item.configLinesAdded.toLocaleString()} lines`;
+                                    case 'Config --':
+                                        return `🛠️ Config --: ${item.configLinesRemoved.toLocaleString()} lines`;
+                                    default:
+                                        return `${label}: ${context.parsed.y.toLocaleString()}`;
+                                }
+                            },
+                            afterBody: function(context) {
+                                if (context.length > 0) {
+                                    const dataIndex = context[0].dataIndex;
+                                    const item = data[dataIndex];
+                                    const totalNet = item.totalLinesAdded - item.totalLinesRemoved;
+                                    const codeNet = item.codeLinesAdded - item.codeLinesRemoved;
+                                    const dataNet = item.dataLinesAdded - item.dataLinesRemoved;
+                                    const configNet = item.configLinesAdded - item.configLinesRemoved;
+                                    const totalSign = totalNet > 0 ? '+' : '';
+                                    return [
+                                        '',
+                                        `📝 Commits: ${item.commitCount}`,
+                                        `📊 Total Net: ${totalSign}${totalNet.toLocaleString()} lines`,
+                                        '',
+                                        `💚 Code: +${item.codeLinesAdded.toLocaleString()} / -${item.codeLinesRemoved.toLocaleString()} (net: ${codeNet >= 0 ? '+' : ''}${codeNet.toLocaleString()})`,
+                                        `💜 Data: +${item.dataLinesAdded.toLocaleString()} / -${item.dataLinesRemoved.toLocaleString()} (net: ${dataNet >= 0 ? '+' : ''}${dataNet.toLocaleString()})`,
+                                        `🧡 Config: +${item.configLinesAdded.toLocaleString()} / -${item.configLinesRemoved.toLocaleString()} (net: ${configNet >= 0 ? '+' : ''}${configNet.toLocaleString()})`
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        },
+                        grid: {
+                            display: true,
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        }
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Lines of Code'
+                        },
+                        grid: {
+                            display: true,
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        min: 0
+                    }
+                },
+                onClick: (event, elements) => {
+                    if (elements.length > 0) {
+                        const dataIndex = elements[0].index;
+                        const item = data[dataIndex];
+                        // Could add callback here for chart clicks
+                    }
+                }
+            }
+        });
+    };
+</script> 

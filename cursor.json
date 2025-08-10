@@ -1,0 +1,85 @@
+{
+  "project": "BB (Bitbucket Analytics)",
+  "description": "A comprehensive .NET 9 solution for analyzing Bitbucket repositories with real-time analytics dashboard. Features interactive charts, GitHub-style contributor insights, and automated data synchronization from Bitbucket Cloud.",
+  "tech_stack": {
+    "language": "C#",
+    "framework": ".NET 9",
+    "frontend": "Blazor Server with Radzen UI components",
+    "charts": "Chart.js with custom configurations",
+    "database": "SQL Server (schema managed via SQL files, no migrations)",
+    "api": "ASP.NET Core Web API",
+    "bitbucket_api": [
+      "https://developer.atlassian.com/cloud/bitbucket/rest/api-group-commits/#api-group-commits",
+      "https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-group-pullrequests"
+    ]
+  },
+  "structure": {
+    "solution": "BB.sln",
+    "projects": [
+      {
+        "name": "BBIntegration",
+        "type": "Class Library",
+        "folders": [
+          "Commits (BitbucketCommitsService.cs, CommitDto.cs)",
+          "PullRequests (BitbucketPullRequestsService.cs, PullRequestDto.cs)",
+          "Common (BitbucketApiClient.cs, BitbucketConfig.cs)"
+        ]
+      },
+      {
+        "name": "BB.Api",
+        "type": "ASP.NET Core Web API",
+        "port": "5000",
+        "folders": [
+          "Endpoints/Analytics (AnalyticsController.cs, CommitActivityDto.cs, ContributorActivityDto.cs, etc.)",
+          "Endpoints/Commits (CommitsController.cs, CommitRequestDto.cs, CommitResponseDto.cs)",
+          "Endpoints/PullRequests (PullRequestsController.cs, PullRequestRequestDto.cs, PullRequestResponseDto.cs)",
+          "Endpoints/Sync (SyncController.cs for data synchronization)",
+          "Services (AnalyticsService.cs, CommitAnalysisService.cs, PullRequestAnalysisService.cs)",
+          "Models (Commit.cs, PullRequest.cs)",
+          "SqlSchema (schema.sql)",
+          "appsettings.template.json"
+        ]
+      },
+      {
+        "name": "BB.Web",
+        "type": "Blazor Server Web Application",
+        "port": "5084",
+        "folders": [
+          "Components/Pages (Dashboard.razor, ApiTest.razor)",
+          "Components/Layout (MainLayout.razor, NavMenu.razor)",
+          "DTOs (CommitActivityDto.cs, ContributorActivityDto.cs, RepositorySummaryDto.cs)",
+          "appsettings.template.json"
+        ],
+        "features": [
+          "Interactive Chart.js visualizations with multi-dataset area charts",
+          "GitHub-style individual contributor charts",
+          "Date range filtering with quick presets",
+          "Responsive Bootstrap UI design",
+          "Real-time data updates via API calls"
+        ]
+      }
+    ]
+  },
+  "development_rules": [
+    "BB.Web Development: ALWAYS verify API endpoints exist in BB.Api before implementing UI features",
+    "BB.Web Development: Check BB.Api/Endpoints/ folders for available controllers and DTOs",
+    "BB.Web Development: Test API connectivity using the ApiTest.razor page before dashboard features",
+    "BB.Web Development: Ensure proper error handling for API connection failures",
+    "BB.Web Development: Use Chart.js for all data visualizations, maintain consistent color schemes",
+    "Configuration: NEVER commit appsettings.json files with sensitive data - use templates only",
+    "Database: Create database from scratch using BB.Api/SqlSchema/schema.sql - no migrations",
+    "API Development: Each endpoint should have its own folder with controller and DTOs",
+    "Integration: All Bitbucket API logic should be in BBIntegration project, not in BB.Api directly"
+  ],
+  "ports": {
+    "BB.Api": "5000 (HTTP), 5000 (HTTPS)",
+    "BB.Web": "5084 (HTTP), 7051 (HTTPS)"
+  },
+  "notes": [
+    "No test project included.",
+    "No DB migrations; use SQL files for schema management.",
+    "Each API endpoint has its own folder with controller and DTOs.",
+    "Integration logic grouped by feature in the integration class library.",
+    "Configuration templates provided to prevent sensitive data commits."
+  ]
+} 

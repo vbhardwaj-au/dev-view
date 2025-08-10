@@ -1,0 +1,725 @@
+@attribute [Authorize(Roles="Admin")]
+@page "/admin/settings"
+@using Web.Services
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject WorkspaceService WorkspaceService
+@rendermode InteractiveServer
+
+
+<PageTitle>Admin - Settings - DevView</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">
+                <i class="bi bi-sliders me-2"></i>
+                Settings
+            </h1>
+
+            @if (!string.IsNullOrEmpty(message))
+            {
+                <div class="alert @(messageType == "success" ? "alert-success" : "alert-danger") alert-dismissible fade show" role="alert">
+                    @message
+                    <button type="button" class="btn-close" @onclick="() => message = string.Empty"></button>
+                </div>
+            }
+
+            <!-- Workspace Configuration -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-building me-2"></i>
+                        Workspace Configuration
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="workspaceSelect" class="form-label fw-bold">Select Workspace</label>
+                                @if (workspaces == null)
+                                {
+                                    <div class="d-flex align-items-center">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <span>Loading workspaces...</span>
+                                    </div>
+                                }
+                                else if (workspaces.Any())
+                                {
+                                    <select id="workspaceSelect" class="form-select" @bind="selectedWorkspace" @bind:after="() => OnWorkspaceChanged()">
+                                        @foreach (var workspace in workspaces)
+                                        {
+                                            <option value="@workspace">@workspace</option>
+                                        }
+                                    </select>
+                                    <div class="form-text">
+                                        This workspace will be used across all Dashboard and Admin pages.
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="alert alert-warning">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        No workspaces found. Please sync repositories first to discover workspaces.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Actions</label>
+                                <div>
+                                    <button class="btn btn-outline-primary" @onclick="RefreshWorkspaces" disabled="@isRefreshing">
+                                        @if (isRefreshing)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-arrow-clockwise me-2"></i>
+                                        }
+                                        Refresh Workspaces
+                                    </button>
+                                </div>
+                                <div class="form-text">
+                                    Refresh the workspace list from existing repositories.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    @if (!string.IsNullOrEmpty(selectedWorkspace))
+                    {
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle me-2"></i>
+                            <strong>Current Workspace:</strong> @selectedWorkspace
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Repository Sync Section -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-folder-fill me-2"></i>
+                        Repository Sync
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Workspace</label>
+                                <div>
+                                    <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
+                                </div>
+                                <div class="form-text">
+                                    Current workspace for repository sync. Change workspace in the configuration section above.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold d-block">&nbsp;</label>
+                                <button class="btn btn-primary" @onclick="SyncRepositories" disabled="@(isSyncingRepos || !WorkspaceService.HasSelectedWorkspace)">
+                                    @if (isSyncingRepos)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-cloud-download me-2"></i>
+                                    }
+                                    Sync Repositories
+                                </button>
+                                @if (!WorkspaceService.HasSelectedWorkspace)
+                                {
+                                    <div class="form-text text-warning">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        Please select a workspace first
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Sync Section -->
+            <div class="row">
+                <!-- Commits Sync -->
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="bi bi-git me-2"></i>
+                                Commit Data Sync
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Workspace</label>
+                                <div>
+                                    <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="commitRepo" class="form-label">Repository Slug</label>
+                                <input type="text" id="commitRepo" class="form-control" @bind="commitRepo" placeholder="Enter repository slug" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Date Range</label>
+                                <div class="d-flex flex-wrap gap-2 mb-2">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(10)">Last 10 days</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(30)">Last 30 days</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(60)">Last 60 days</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(90)">Last 90 days</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetThisYear">This year</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetLastYear">Last year</button>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col">
+                                        <input type="date" class="form-control" @bind="commitStartDate" />
+                                    </div>
+                                    <div class="col">
+                                        <input type="date" class="form-control" @bind="commitEndDate" />
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn btn-success w-100" @onclick="SyncCommits" disabled="@(isSyncingCommits || !WorkspaceService.HasSelectedWorkspace || string.IsNullOrWhiteSpace(commitRepo))">
+                                @if (isSyncingCommits)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-arrow-repeat me-2"></i>
+                                }
+                                Sync Commits
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Commit Line Count Refresh -->
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="bi bi-arrow-clockwise me-2"></i>
+                                Refresh Commit Line Counts
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <p>Re-processes all existing commits to update Code, Data, and Config line counts based on the latest file classification rules.</p>
+                            <button class="btn btn-warning w-100" @onclick="RefreshCommitLineCounts" disabled="@isRefreshingCommits">
+                                @if (isRefreshingCommits)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-arrow-clockwise me-2"></i>
+                                }
+                                Refresh All Commit Line Counts
+                            </button>
+                            <div class="form-text text-muted mt-2">
+                                This operation might take a long time depending on the number of commits.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PR Sync Section -->
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="bi bi-git me-2"></i>
+                                Pull Request Data Sync
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Workspace</label>
+                                <div>
+                                    <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="prRepo" class="form-label">Repository Slug</label>
+                                <input type="text" id="prRepo" class="form-control" @bind="prRepo" placeholder="Enter repository slug" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Date Range</label>
+                                <div class="d-flex flex-wrap gap-2 mb-2">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(10)">Last 10 days</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(30)">Last 30 days</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(60)">Last 60 days</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(90)">Last 90 days</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetPRThisYear">This year</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetPRLastYear">Last year</button>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col">
+                                        <input type="date" class="form-control" @bind="prStartDate" />
+                                    </div>
+                                    <div class="col">
+                                        <input type="date" class="form-control" @bind="prEndDate" />
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn btn-success w-100" @onclick="SyncPullRequests" disabled="@(isSyncingPRs || !WorkspaceService.HasSelectedWorkspace || string.IsNullOrWhiteSpace(prRepo))">
+                                @if (isSyncingPRs)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-arrow-repeat me-2"></i>
+                                }
+                                Sync Pull Requests
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fix PR Merge Flags -->
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="bi bi-flag me-2"></i>
+                                Fix PR Merge Flags
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <p>Identifies and updates the `IsPRMergeCommit` flag for merge commits that are part of a pull request, ensuring accurate data representation.</p>
+                            <div class="mb-3">
+                                <label for="fixPrRepoSlug" class="form-label">Repository Slug (Optional)</label>
+                                <input type="text" id="fixPrRepoSlug" class="form-control" @bind="fixPrRepoSlug" placeholder="Leave empty for all repositories" />
+                                <div class="form-text">
+                                    Specify a repository slug to fix flags only for that repository, or leave empty to fix for all.
+                                </div>
+                            </div>
+                            <button class="btn btn-info w-100" @onclick="FixPRMergeFlags">
+                                <i class="bi bi-tools me-2"></i>
+                                Fix PR Merge Commits Flags
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Revert Commit Detection Section -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-arrow-counterclockwise me-2"></i>
+                        Revert Commit Detection
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        This tool will scan all commits and mark those that are detected as revert commits (e.g., commit messages starting with "Revert").
+                        Revert commits are excluded from analytics and reporting.
+                    </p>
+                    <button class="btn btn-danger w-100" @onclick="IdentifyAndMarkRevertCommits" disabled="@isMarkingReverts">
+                        @if (isMarkingReverts)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-search me-2"></i>
+                        }
+                        Identify & Mark Revert Commits
+                    </button>
+                    <div class="form-text text-muted mt-2">
+                        This operation will analyze all commit messages and may take a while for large repositories.
+                    </div>
+                    @if (!string.IsNullOrEmpty(revertResultMessage))
+                    {
+                        <div class="alert alert-info mt-3">@revertResultMessage</div>
+                    }
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@code {
+    private IEnumerable<string>? workspaces;
+    private string selectedWorkspace = string.Empty;
+    private bool isRefreshing = false;
+    private bool isSyncingRepos = false;
+
+    // Commits sync - only need repo slug, workspace comes from WorkspaceService
+    private string commitRepo = string.Empty;
+    private DateTime commitStartDate = DateTime.Now.Date.AddDays(-30);
+    private DateTime commitEndDate = DateTime.Today;
+    private bool isSyncingCommits = false;
+    private bool isRefreshingCommits = false; // New field
+
+    // PR sync - only need repo slug, workspace comes from WorkspaceService
+    private string prRepo = string.Empty;
+    private DateTime prStartDate = DateTime.Now.Date.AddDays(-30);
+    private DateTime prEndDate = DateTime.Today;
+    private bool isSyncingPRs = false;
+
+    private string message = string.Empty;
+    private string messageType = string.Empty;
+    private string fixPrRepoSlug = string.Empty;
+    private bool isMarkingReverts = false;
+    private string revertResultMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadWorkspaces();
+    }
+
+    private async Task LoadWorkspaces()
+    {
+        try
+        {
+            workspaces = await Http.GetFromJsonAsync<IEnumerable<string>>("api/analytics/workspaces");
+            if (workspaces != null && workspaces.Any() && string.IsNullOrEmpty(selectedWorkspace))
+            {
+                selectedWorkspace = WorkspaceService.SelectedWorkspace ?? workspaces.First();
+                WorkspaceService.SelectedWorkspace = selectedWorkspace;
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading workspaces: {ex.Message}", "error");
+        }
+    }
+
+    private void OnWorkspaceChanged()
+    {
+        WorkspaceService.SelectedWorkspace = selectedWorkspace;
+        ShowMessage($"Workspace changed to: {selectedWorkspace}", "success");
+    }
+
+    private async Task RefreshWorkspaces()
+    {
+        isRefreshing = true;
+        message = string.Empty;
+
+        try
+        {
+            // Assuming a refresh endpoint exists or we can just reload from existing repos
+            // For now, we'll just reload the workspaces from the existing data
+            await LoadWorkspaces();
+            ShowMessage("Workspaces refreshed successfully.", "success");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error refreshing workspaces: {ex.Message}", "error");
+        }
+        finally
+        {
+            isRefreshing = false;
+        }
+    }
+
+    private async Task SyncRepositories()
+    {
+        if (!WorkspaceService.HasSelectedWorkspace)
+        {
+            ShowMessage("Please select a workspace first", "error");
+            return;
+        }
+
+        isSyncingRepos = true;
+        message = string.Empty;
+
+        try
+        {
+            var response = await Http.PostAsync("/api/sync/repositories/" + WorkspaceService.SelectedWorkspace, null);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                ShowMessage(responseContent, "success");
+                await LoadWorkspaces(); // Refresh workspaces after sync
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Sync failed: {errorContent}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error during sync: {ex.Message}", "error");
+        }
+        finally
+        {
+            isSyncingRepos = false;
+        }
+    }
+
+    private void SetDateRange(int days)
+    {
+        commitEndDate = DateTime.Now.Date;
+        commitStartDate = commitEndDate.AddDays(-days);
+    }
+
+    private void SetThisYear()
+    {
+        var now = DateTime.Now;
+        commitStartDate = new DateTime(now.Year, 1, 1);
+        commitEndDate = now.Date;
+    }
+
+    private void SetLastYear()
+    {
+        var now = DateTime.Now.Date;
+        commitStartDate = new DateTime(now.Year - 1, 1, 1);
+        commitEndDate = new DateTime(now.Year - 1, 12, 31);
+    }
+
+    private async Task SyncCommits()
+    {
+        if (!WorkspaceService.HasSelectedWorkspace)
+        {
+            ShowMessage("Please select a workspace first", "error");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(commitRepo))
+        {
+            ShowMessage("Please enter repository slug", "error");
+            return;
+        }
+
+        isSyncingCommits = true;
+        message = string.Empty;
+
+        try
+        {
+            var startDate = commitStartDate;
+            var endDate = commitEndDate;
+
+            var url = "/api/sync/commits/" + WorkspaceService.SelectedWorkspace + "/" + commitRepo;
+            var dateRange = new { startDate, endDate };
+            var response = await Http.PostAsJsonAsync(url, dateRange);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Commits synced successfully: {responseContent}", "success");
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Sync failed: {errorContent}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error during sync: {ex.Message}", "error");
+        }
+        finally
+        {
+            isSyncingCommits = false;
+        }
+    }
+
+    private void SetPRDateRange(int days)
+    {
+        prEndDate = DateTime.Now.Date;
+        prStartDate = prEndDate.AddDays(-days);
+    }
+
+    private void SetPRThisYear()
+    {
+        var now = DateTime.Now;
+        prStartDate = new DateTime(now.Year, 1, 1);
+        prEndDate = now.Date;
+    }
+
+    private void SetPRLastYear()
+    {
+        var now = DateTime.Now.Date;
+        prStartDate = new DateTime(now.Year - 1, 1, 1);
+        prEndDate = new DateTime(now.Year - 1, 12, 31);
+    }
+
+    private async Task SyncPullRequests()
+    {
+        if (!WorkspaceService.HasSelectedWorkspace)
+        {
+            ShowMessage("Please select a workspace first", "error");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(prRepo))
+        {
+            ShowMessage("Please enter repository slug", "error");
+            return;
+        }
+
+        isSyncingPRs = true;
+        message = string.Empty;
+
+        try
+        {
+            var startDate = prStartDate;
+            var endDate = prEndDate;
+
+            var url = "/api/sync/pullrequests/" + WorkspaceService.SelectedWorkspace + "/" + prRepo;
+            var dateRange = new { startDate, endDate };
+            var response = await Http.PostAsJsonAsync(url, dateRange);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Pull requests synced successfully: {responseContent}", "success");
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Sync failed: {errorContent}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error during sync: {ex.Message}", "error");
+        }
+        finally
+        {
+            isSyncingPRs = false;
+        }
+    }
+
+    private async Task RefreshCommitLineCounts()
+    {
+        isRefreshingCommits = true;
+        message = string.Empty;
+
+        try
+        {
+            var response = await Http.PostAsync("api/sync/refresh-commit-line-counts", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                ShowMessage(responseContent, "success");
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Refresh failed: {errorContent}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error during refresh: {ex.Message}", "error");
+        }
+        finally
+        {
+            isRefreshingCommits = false;
+        }
+    }
+
+    private async Task FixPRMergeFlags()
+    {
+        if (!WorkspaceService.HasSelectedWorkspace)
+        {
+            ShowMessage("Please select a workspace first", "error");
+            return;
+        }
+
+        // The following if-block caused an issue if fixPrRepoSlug was null or empty, leading to a Bad Request.
+        // It should allow empty for all repositories, as per the UI text.
+        // if (string.IsNullOrWhiteSpace(fixPrRepoSlug))
+        // {
+        //     ShowMessage("Please enter repository slug for specific fix or leave empty for all", "error");
+        //     return;
+        // }
+
+        isSyncingPRs = true; // Reusing isSyncingPRs for this operation
+        message = string.Empty;
+
+        try
+        {
+            // Construct URL based on whether repoSlug is provided
+            var url = string.IsNullOrWhiteSpace(fixPrRepoSlug)
+                ? $"/api/sync/fix-pr-merge-flags"
+                : $"/api/sync/fix-pr-merge-flags?repoSlug={fixPrRepoSlug}";
+
+            var response = await Http.PostAsync(url, null);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                ShowMessage($"PR merge flags fixed successfully: {responseContent}", "success");
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Fix failed: {errorContent}", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error during fix: {ex.Message}", "error");
+        }
+        finally
+        {
+            isSyncingPRs = false;
+        }
+    }
+
+    private async Task IdentifyAndMarkRevertCommits()
+    {
+        if (!WorkspaceService.HasSelectedWorkspace)
+        {
+            ShowMessage("Please select a workspace first", "error");
+            return;
+        }
+
+        isMarkingReverts = true;
+        revertResultMessage = string.Empty;
+
+        try
+        {
+            var url = $"/api/sync/identify-revert-commits/{WorkspaceService.SelectedWorkspace}";
+            var response = await Http.PostAsync(url, null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                revertResultMessage = $"Revert commits identified and marked successfully: {responseContent}";
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                revertResultMessage = $"Failed to identify revert commits: {errorContent}";
+            }
+        }
+        catch (Exception ex)
+        {
+            revertResultMessage = $"Error during revert identification: {ex.Message}";
+        }
+        finally
+        {
+            isMarkingReverts = false;
+        }
+    }
+
+    private void ShowMessage(string msg, string type)
+    {
+        message = msg;
+        messageType = type;
+        StateHasChanged();
+    }
+} 

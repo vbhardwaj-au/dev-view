@@ -1,0 +1,14 @@
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Simply redirect to login - this component should only be rendered when not authorized
+        if (!Nav.Uri.EndsWith("/login", StringComparison.OrdinalIgnoreCase))
+        {
+            Nav.NavigateTo("/login", forceLoad: false);
+        }
+    }
+}
+
+

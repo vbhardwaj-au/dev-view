@@ -1,0 +1,39 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/bin
+/obj
+/packages
+
+# project files
+*.user
+*.suo
+*.sln.docstates
+
+# ReSharper files
+*.resharper
+/_ReSharper
+
+# Rider files
+/.idea
+
+# Visual Studio files
+.vs/
+*.csproj.user
+*.vcxproj.filters
+
+# Mac files
+.DS_Store
+
+# build artifacts
+/build
+/artifacts
+
+# secrets
+appsettings.Development.json
+secrets.json
+
+# Rider files
+.idea/
+*.idea
+*.iml 

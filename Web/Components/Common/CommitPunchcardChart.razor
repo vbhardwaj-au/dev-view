@@ -1,0 +1,219 @@
+
+@inject IJSRuntime JS
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            📊 @Title
+            @if (!string.IsNullOrEmpty(RepositoryInfo))
+            {
+                <span class="text-muted">- @RepositoryInfo</span>
+            }
+        </h5>
+        <small class="text-muted">Interactive punchcard showing commit activity by day of week and hour (bubble size represents commit volume)</small>
+    </div>
+    <div class="card-body">
+        <div style="position: relative; height: 400px; max-width: 1200px; margin: 0 auto;">
+            <canvas id="@ChartId"></canvas>
+            @if (IsLoading)
+            {
+                <div class="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100 bg-white bg-opacity-75">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading chart...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Loading punchcard data...</p>
+                    </div>
+                </div>
+            }
+            @if (Data == null || !Data.Any())
+            {
+                <div class="d-flex align-items-center justify-content-center h-100 position-absolute top-0 start-0 w-100">
+                    <div class="text-center text-muted">
+                        <i class="bi bi-grid-3x3" style="font-size: 3rem;"></i>
+                        <p class="mt-2">No commit activity data available. Please select a repository and date range.</p>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<CommitPunchcardDto> Data { get; set; } = new();
+
+    [Parameter]
+    public string ChartId { get; set; } = $"punchcardChart_{Guid.NewGuid().ToString("N")}";
+    
+    [Parameter]
+    public string Title { get; set; } = "Commit Activity Punchcard";
+    
+    [Parameter]
+    public string? RepositoryInfo { get; set; }
+    
+    [Parameter]
+    public bool IsLoading { get; set; } = false;
+
+    private static readonly string[] Days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
+    private static readonly string[] Hours = new[] {
+        "12 AM", "1 AM", "2 AM", "3 AM", "4 AM", "5 AM", "6 AM", "7 AM", "8 AM", "9 AM", "10 AM", "11 AM",
+        "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM", "11 PM"
+    };
+
+    private object[] GetChartData() 
+    {
+        if (!Data.Any()) return Array.Empty<object>();
+        
+        // Calculate min and max commit counts for normalization
+        var minCommits = Data.Min(d => d.CommitCount);
+        var maxCommits = Data.Max(d => d.CommitCount);
+        var range = maxCommits - minCommits;
+        
+        // Define min and max bubble sizes (in pixels)
+        const double minBubbleSize = 5.0;
+        const double maxBubbleSize = 25.0;
+        const double sizeRange = maxBubbleSize - minBubbleSize;
+        
+        return Data.Select(d => {
+            // Normalize commit count to 0-1 range
+            var normalizedValue = range > 0 ? (double)(d.CommitCount - minCommits) / range : 0.5;
+            
+            // Apply non-linear scaling (square root) for better visual distribution
+            var scaledValue = Math.Sqrt(normalizedValue);
+            
+            // Calculate final bubble size within our constraints
+            var bubbleSize = minBubbleSize + (scaledValue * sizeRange);
+            
+            return new {
+                // Map DayOfWeek: 0=Sunday, 1=Monday, ..., 6=Saturday
+                y = Days[d.DayOfWeek == 0 ? 6 : d.DayOfWeek - 1], // Sunday last
+                x = Hours[d.HourOfDay],
+                r = bubbleSize,
+                count = d.CommitCount,
+                // Color intensity based on normalized value (0-1)
+                backgroundColor = $"rgba(54, 162, 235, {0.3 + (scaledValue * 0.7)})",
+                borderColor = $"rgba(54, 162, 235, {0.6 + (scaledValue * 0.4)})"
+            };
+        }).ToArray();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Data != null && Data.Any())
+        {
+            var chartData = GetChartData();
+            await JS.InvokeVoidAsync("initializePunchcardChart", ChartId, chartData);
+        }
+    }
+}
+
+<script>
+window.initializePunchcardChart = (chartId, data) => {
+    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const hours = [
+        "12 AM", "1 AM", "2 AM", "3 AM", "4 AM", "5 AM", "6 AM", "7 AM", "8 AM", "9 AM", "10 AM", "11 AM",
+        "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM", "11 PM"
+    ];
+    
+    const chartElement = document.getElementById(chartId);
+    if (!chartElement) {
+        console.error('Punchcard chart canvas element not found.');
+        return;
+    }
+    
+    const ctx = chartElement.getContext('2d');
+    if (window.punchcardChart && typeof window.punchcardChart.destroy === 'function') {
+        window.punchcardChart.destroy();
+    }
+    
+    // Create color mapping based on intensity
+    const processedData = data.map(point => ({
+        ...point,
+        backgroundColor: `rgba(33, 37, 41, ${0.3 + (point.intensity || 0) * 0.7})`, // Variable opacity based on intensity
+        borderColor: 'rgba(33, 37, 41, 0.8)',
+        borderWidth: 1
+    }));
+    
+    window.punchcardChart = new Chart(ctx, {
+        type: 'bubble',
+        data: {
+            datasets: [{
+                label: 'Commits',
+                data: processedData,
+                backgroundColor: processedData.map(p => p.backgroundColor),
+                borderColor: processedData.map(p => p.borderColor),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    top: 20,
+                    right: 20,
+                    bottom: 20,
+                    left: 20
+                }
+            },
+            scales: {
+                x: {
+                    type: 'category',
+                    labels: hours,
+                    title: { 
+                        display: true, 
+                        text: 'Hour of Day',
+                        font: { size: 12, weight: 'bold' }
+                    },
+                    grid: { 
+                        drawBorder: false,
+                        color: 'rgba(0, 0, 0, 0.1)'
+                    },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45
+                    }
+                },
+                y: {
+                    type: 'category',
+                    labels: days,
+                    title: { 
+                        display: true, 
+                        text: 'Day of Week',
+                        font: { size: 12, weight: 'bold' }
+                    },
+                    reverse: false, // Monday at top, Sunday at bottom
+                    grid: { 
+                        drawBorder: false,
+                        color: 'rgba(0, 0, 0, 0.1)'
+                    }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: function(context) {
+                            const point = context[0];
+                            return `${point.raw.y}, ${point.raw.x}`;
+                        },
+                        label: function(context) {
+                            return `Commits: ${context.raw.count}`;
+                        }
+                    },
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: 'white',
+                    bodyColor: 'white',
+                    borderColor: 'rgba(255, 255, 255, 0.3)',
+                    borderWidth: 1
+                }
+            },
+            interaction: {
+                mode: 'point',
+                intersect: true
+            }
+        }
+    });
+};
+</script> 

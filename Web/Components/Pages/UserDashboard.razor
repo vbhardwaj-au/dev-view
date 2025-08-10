@@ -1,0 +1,1128 @@
+@attribute [Authorize]
+@page "/user-dashboard"
+
+@using System.Net.Http.Json
+@using Radzen
+@using Radzen.Blazor
+@using Web.Services
+@using Web.Components.Common
+@using System.Linq
+@using Microsoft.AspNetCore.WebUtilities
+@using Entities.DTOs.Teams
+
+<style>
+    .filter-container {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .filter-card {
+        transition: all 0.3s ease;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    .filter-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    
+    .filter-card .card-title {
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    
+    .form-check-input:checked {
+        background-color: #198754;
+        border-color: #198754;
+    }
+    
+    .alert-sm {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+        margin-bottom: 0;
+    }
+    
+    .quick-date-btn {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        transition: all 0.2s ease;
+    }
+    
+    .quick-date-btn:hover {
+        transform: scale(1.05);
+    }
+    
+    @@media (max-width: 768px) {
+        .filter-container {
+            padding: 15px;
+        }
+        
+        .row.g-3 > * {
+            margin-bottom: 15px;
+        }
+    }
+</style>
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject WorkspaceService WorkspaceService
+@rendermode InteractiveServer
+
+<PageTitle>Commits Dashboard - DevView</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4"><i class="bi bi-speedometer2"></i> Commits Dashboard</h1>
+        </div>
+    </div>
+
+    @if (!WorkspaceService.HasSelectedWorkspace)
+    {
+        <div class="alert alert-warning" role="alert">
+            <h4 class="alert-heading">Workspace Not Configured</h4>
+            <p>Please select a workspace in Settings to view dashboard statistics.</p>
+            <hr>
+            <button class="btn btn-primary" @onclick="NavigateToSettings">
+                <i class="bi bi-gear-fill me-2"></i>Go to Settings
+            </button>
+        </div>
+    }
+    else
+    {
+        <!-- Filter Controls -->
+        <div class="filter-container">
+            <div class="row mb-4 g-3">
+                <!-- Repository Filter -->
+                <div class="col-md-3">
+                    <div class="card filter-card h-100 border-primary border-opacity-25">
+                        <div class="card-body p-3">
+                            <h6 class="card-title text-primary mb-3">
+                                <i class="bi bi-folder2-open me-2"></i>Repository
+                            </h6>
+                            @if (isLoadingRepos)
+                            {
+                                <input type="text" class="form-control" value="Loading repositories..." disabled />
+                            }
+                            else if (repositories != null && repositories.Any())
+                            {
+                                <RadzenDropDown Data="@GetRepositoryOptions()"
+                                              TextProperty="Name"
+                                              ValueProperty="Slug"
+                                              AllowClear="true"
+                                              AllowFiltering="true"
+                                              FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                              Placeholder="Search repositories..."
+                                              Value="@selectedRepoSlug"
+                                              Change="@(args => OnRepositoryChanged(args))"
+                                              class="w-100" />
+                            }
+                            else
+                            {
+                                <div class="alert alert-warning alert-sm">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>
+                                    No repositories found
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User/Team Filter -->
+                <div class="col-md-4">
+                    <div class="card filter-card h-100 border-success border-opacity-25">
+                        <div class="card-body p-3">
+                            <h6 class="card-title text-success mb-3">
+                                <i class="bi bi-people me-2"></i>Filter By
+                            </h6>
+                            
+                            <!-- Radio buttons for selection type -->
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="filterType" id="filterByUser" 
+                                               checked="@(filterType == "user")" @onchange="@(() => HandleFilterTypeChanged("user"))" />
+                                        <label class="form-check-label fw-medium" for="filterByUser">
+                                            <i class="bi bi-person me-1"></i>Individual
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="filterType" id="filterByTeam" 
+                                               checked="@(filterType == "team")" @onchange="@(() => HandleFilterTypeChanged("team"))" />
+                                        <label class="form-check-label fw-medium" for="filterByTeam">
+                                            <i class="bi bi-people-fill me-1"></i>Team
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Selection Dropdown -->
+                            <div>
+                                @if (filterType == "user")
+                                {
+                                    @if (isLoadingUsers)
+                                    {
+                                        <div class="text-center py-2">
+                                            <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                            <span class="text-muted">Loading users...</span>
+                                        </div>
+                                    }
+                                    else if (users != null && users.Any())
+                                    {
+                                        <RadzenDropDown Data="@users.OrderBy(u => u.DisplayName)"
+                                                      TextProperty="DisplayName"
+                                                      ValueProperty="Id"
+                                                      AllowClear="true"
+                                                      AllowFiltering="true"
+                                                      FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                                      Placeholder="Search users..."
+                                                      Value="@selectedUserId"
+                                                      Change="@(args => OnUserChanged(args))"
+                                                      class="w-100" />
+                                    }
+                                    else
+                                    {
+                                        <div class="alert alert-warning alert-sm">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>
+                                            No users available
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    @if (isLoadingTeams)
+                                    {
+                                        <div class="text-center py-2">
+                                            <div class="spinner-border spinner-border-sm text-success me-2" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                            <span class="text-muted">Loading teams...</span>
+                                        </div>
+                                    }
+                                    else if (teams != null && teams.Any())
+                                    {
+                                        <RadzenDropDown Data="@GetTeamOptions()"
+                                                      TextProperty="Name"
+                                                      ValueProperty="Id"
+                                                      AllowClear="true"
+                                                      AllowFiltering="true"
+                                                      FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                                      Placeholder="Search teams..."
+                                                      Value="@selectedTeamId"
+                                                      Change="@(args => OnTeamChanged(args))"
+                                                      class="w-100" />
+                                    }
+                                    else
+                                    {
+                                        <div class="alert alert-info alert-sm">
+                                            <i class="bi bi-info-circle me-1"></i>
+                                            No teams found. <a href="/admin/teams" class="alert-link">Create teams</a>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Date Range Selection -->
+                <div class="col-md-5">
+                    <div class="card filter-card h-100 border-info border-opacity-25">
+                        <div class="card-body p-3">
+                            <h6 class="card-title text-info mb-3">
+                                <i class="bi bi-calendar-range me-2"></i>Date Range
+                            </h6>
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label small text-muted mb-1">Start Date</label>
+                                    <RadzenDatePicker @bind-Value="startDate" DateFormat="MM/dd/yyyy" Placeholder="Start Date" 
+                                                    Change="@(() => OnDateRangeChanged())" class="w-100" />
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small text-muted mb-1">End Date</label>
+                                    <RadzenDatePicker @bind-Value="endDate" DateFormat="MM/dd/yyyy" Placeholder="End Date" 
+                                                    Change="@(() => OnDateRangeChanged())" class="w-100" />
+                                </div>
+                            </div>
+                            
+                            <!-- Quick Date Range Buttons -->
+                            <div class="d-flex flex-wrap gap-1">
+                                <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" 
+                                            Text="7 Days" Click="@(() => SetDateRange(7))" 
+                                            class="btn-outline-info btn-sm rounded-pill px-2 py-1" />
+                                <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" 
+                                            Text="30 Days" Click="@(() => SetDateRange(30))" 
+                                            class="btn-outline-info btn-sm rounded-pill px-2 py-1" />
+                                <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" 
+                                            Text="90 Days" Click="@(() => SetDateRange(90))" 
+                                            class="btn-outline-info btn-sm rounded-pill px-2 py-1" />
+                                <RadzenButton Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" 
+                                            Text="All Time" Click="@(() => SetDateRange(null))" 
+                                            class="btn-outline-info btn-sm rounded-pill px-2 py-1" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Filters -->
+        <div class="filter-container">
+            <div class="row mb-4 g-3">
+                <!-- Content Filters -->
+                <div class="col-md-12">
+                    <div class="card filter-card border-warning border-opacity-25">
+                        <div class="card-body p-3">
+                            <h6 class="card-title text-warning mb-3">
+                                <i class="bi bi-funnel me-2"></i>Content Filters
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-lg-6 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="includePR" @bind="includePR" @bind:after="OnFilterChanged">
+                                        <label class="form-check-label fw-medium" for="includePR">
+                                            <i class="bi bi-git me-1"></i>Include PRs
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-lg-6 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="showExcluded" @bind="showExcluded" @bind:after="OnFilterChanged">
+                                        <label class="form-check-label fw-medium" for="showExcluded">
+                                            <i class="bi bi-eye-slash me-1"></i>Show Excluded
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Search Button -->
+            <div class="row mt-3">
+                <div class="col-12">
+                    <div class="d-flex justify-content-end">
+                        <button class="btn btn-success" @onclick="OnSearchButtonClicked" disabled="@isLoading">
+                            @if (isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                <span>Searching...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-search me-2"></i>
+                                <span>Search</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (isLoading)
+    {
+        <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span>Loading dashboard data...</span>
+            </div>
+        </RadzenAlert>
+    }
+    else if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+    else if (dashboardData != null)
+    {
+        <h3 class="mb-4">Usage Statistics</h3>
+        <div class="row">
+            <!-- Active Contributing Users -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-3">Active Contributing Users</h5>
+                            <i class="bi bi-people-fill fs-3 text-primary"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            @dashboardData.CurrentPeriod.ActiveContributingUsers
+                            @{
+                                var userChange = (double)dashboardData.CurrentPeriod.ActiveContributingUsers - dashboardData.PreviousPeriod.ActiveContributingUsers;
+                                var userPercentageChange = dashboardData.PreviousPeriod.ActiveContributingUsers > 0
+                                    ? (userChange / dashboardData.PreviousPeriod.ActiveContributingUsers) * 100
+                                    : 0;
+                                var userChangeClass = userPercentageChange >= 0 ? "text-success" : "text-danger";
+                                var userChangeIcon = userPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
+                            }
+                            <span class="small @userChangeClass">
+                                <i class="bi @userChangeIcon"></i> @userPercentageChange.ToString("F1")%
+                            </span>
+                        </h2>
+                        <p class="text-muted small mb-0">Last period: @dashboardData.PreviousPeriod.ActiveContributingUsers</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Total Commits -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Total Commits</h5>
+                            <i class="bi bi-git text-info fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            @dashboardData.CurrentPeriod.TotalCommits
+                            @{
+                                var commitChange = (double)dashboardData.CurrentPeriod.TotalCommits - dashboardData.PreviousPeriod.TotalCommits;
+                                var commitPercentageChange = dashboardData.PreviousPeriod.TotalCommits > 0
+                                    ? (commitChange / dashboardData.PreviousPeriod.TotalCommits) * 100
+                                    : 0;
+                                var commitChangeClass = commitPercentageChange >= 0 ? "text-success" : "text-danger";
+                                var commitChangeIcon = commitPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
+                            }
+                            <span class="fs-6 @commitChangeClass">
+                                <i class="bi @commitChangeIcon"></i> @commitPercentageChange.ToString("0.0")%
+                            </span>
+                        </h2>
+                        <p class="text-muted small mb-0">Last period: @dashboardData.PreviousPeriod.TotalCommits</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Repositories Updated -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Repositories Updated</h5>
+                            <i class="bi bi-folder-fill text-warning fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            @dashboardData.CurrentPeriod.RepositoriesUpdated
+                            @{
+                                var repoChange = (double)dashboardData.CurrentPeriod.RepositoriesUpdated - dashboardData.PreviousPeriod.RepositoriesUpdated;
+                                var repoPercentageChange = dashboardData.PreviousPeriod.RepositoriesUpdated > 0
+                                    ? (repoChange / dashboardData.PreviousPeriod.RepositoriesUpdated) * 100
+                                    : 0;
+                                var repoChangeClass = repoPercentageChange >= 0 ? "text-success" : "text-danger";
+                                var repoChangeIcon = repoPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
+                            }
+                            <span class="fs-6 @repoChangeClass">
+                                <i class="bi @repoChangeIcon"></i> @repoPercentageChange.ToString("0.0")%
+                            </span>
+                        </h2>
+                        <p class="text-muted small mb-0">Last period: @dashboardData.PreviousPeriod.RepositoriesUpdated</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PRs Not Approved and Merged -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">PRs Not Approved and Merged</h5>
+                            <i class="bi bi-x-circle-fill text-danger fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            <span class="text-danger">@dashboardData.CurrentPeriod.PrsNotApprovedAndMerged</span>
+                        </h2>
+                        <p class="text-muted small mb-0">Current Period</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Count with No Activity -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Users with No Activity</h5>
+                            <i class="bi bi-person-slash-fill text-warning fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            <span class="text-warning">@dashboardData.UsersWithNoActivity</span>
+                        </h2>
+                        <p class="text-muted small mb-0">Current Period</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PRs Merged by Weekday Chart -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="row align-items-center">
+                            <div class="col-6">
+                                <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-2">PRs Merged</h5>
+                                <h2 class="fw-bold mb-1">@dashboardData.CurrentPeriod.TotalMergedPrs</h2>
+                                @{
+                                    var prChange = (double)dashboardData.CurrentPeriod.TotalMergedPrs - dashboardData.PreviousPeriod.TotalMergedPrs;
+                                    var prPercentageChange = dashboardData.PreviousPeriod.TotalMergedPrs > 0
+                                        ? (prChange / dashboardData.PreviousPeriod.TotalMergedPrs) * 100
+                                        : (dashboardData.CurrentPeriod.TotalMergedPrs > 0 ? 100.0 : 0.0);
+                                    var prChangeClass = prPercentageChange >= 0 ? "text-success" : "text-danger";
+                                }
+                                <p class="small mb-0 @prChangeClass">
+                                    <span>@prChange.ToString("+#;-#;0")</span>
+                                    (@prPercentageChange.ToString("F1")%)
+                                </p>
+                            </div>
+                            <div class="col-6">
+                                <div class="flex-grow-1" style="height: 120px;">
+                                    <canvas id="prsMergedByWeekdayChart" class="w-100 h-100"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h3 class="mb-4 mt-4">Detailed Insights</h3>
+        <div class="row">
+            <!-- PR Average Age Graph -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-3">PR Average Age (Open & Merged)</h5>
+                        <div class="flex-grow-1" style="height: 300px; min-height: 300px; max-height: 300px;">
+                            <canvas id="prAgeChart" class="w-100 h-100"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Commit Activity Punchcard -->
+            <div class="col-lg-6 mb-4">
+                @if (isLoadingPunchcard)
+                {
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body d-flex align-items-center justify-content-center">
+                            <div class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Loading punchcard data...</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (punchcardData != null && punchcardData.Any())
+                {
+                    <CommitPunchcardChart Data="@punchcardData" 
+                                        Title="Commit Activity Punchcard" 
+                                        RepositoryInfo="@GetRepositoryDisplayName()"
+                                        IsLoading="@isLoadingPunchcard" />
+                }
+                else
+                {
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body d-flex align-items-center justify-content-center">
+                            <div class="text-center text-muted">
+                                <i class="bi bi-grid-3x3" style="font-size: 3rem;"></i>
+                                <p class="mt-2">No punchcard data available for the selected criteria.</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Second row for contributor tables -->
+        <div class="row">
+            <!-- Biggest Contributor Users -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-3">Biggest Contributor Users (Commits & Code Lines)</h5>
+                        <div class="table-responsive flex-grow-1">
+                            <table class="table table-striped table-hover table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Commits</th>
+                                        <th>Code Added</th>
+                                        <th>Code Removed</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var contributor in dashboardData.TopContributors)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <a href="javascript:void(0)" 
+                                                   @onclick="() => NavigateToUserCommits(contributor.UserName)"
+                                                   style="cursor:pointer; text-decoration:underline; color:var(--bs-link-color);">
+                                                    @contributor.UserName
+                                                </a>
+                                            </td>
+                                            <td>@contributor.Commits</td>
+                                            <td class="text-success">+@contributor.CodeLinesAdded</td>
+                                            <td class="text-danger">-@contributor.CodeLinesRemoved</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Most Approvals by Top 5 Team Members -->
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-3">Most Approvals by Top 5 Team Members</h5>
+                        <div class="table-responsive flex-grow-1">
+                            <table class="table table-striped table-hover table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>User</th>
+                                        <th>PR Approvals</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var approver in dashboardData.TopApprovers)
+                                    {
+                                        <tr>
+                                            <td>@approver.UserName</td>
+                                            <td>@approver.PrApprovalCount</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+</div>
+
+@code {
+    private UserDashboardResponseDto? dashboardData;
+    private bool isLoading = true;
+    private string? errorMessage;
+    private DateTime? startDate;
+    private DateTime? endDate;
+    private bool _chartsRendered = false;
+
+    // Filter-related state variables
+    private IEnumerable<RepositorySummaryDto>? repositories;
+    private IEnumerable<UserDto>? users;
+    private IEnumerable<TeamSummaryDto>? teams;
+    private bool isLoadingRepos = true;
+    private bool isLoadingUsers = true;
+    private bool isLoadingTeams = true;
+    private string? selectedRepoSlug = "all";
+    private int? selectedUserId;
+    private int? selectedTeamId;
+    private string filterType = "user";
+    private bool includePR = false;
+    private bool showExcluded = false;
+
+    // Punchcard data variables
+    private List<CommitPunchcardDto>? punchcardData;
+    private bool isLoadingPunchcard = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Start with "Last 7 Days" by default
+        // Set end date to end of today (23:59:59) to include all commits from today
+        endDate = DateTime.Today.AddDays(1).AddSeconds(-1);
+        startDate = DateTime.Today.AddDays(-7);
+
+        // Parse query parameters to restore filters when navigating back (this can override defaults)
+        ParseQueryParameters();
+
+        if (!WorkspaceService.HasSelectedWorkspace)
+        {
+            return;
+        }
+
+        await LoadRepositories();
+        await LoadUsers();
+        await LoadTeams();
+        await LoadDashboardData();
+    }
+
+    private void ParseQueryParameters()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var queryParams = QueryHelpers.ParseQuery(uri.Query);
+
+        // Apply filters from query parameters
+        if (queryParams.TryGetValue("repoSlug", out var repoSlug))
+        {
+            selectedRepoSlug = repoSlug;
+        }
+
+        if (queryParams.TryGetValue("filterType", out var filterTypeParam))
+        {
+            filterType = filterTypeParam;
+        }
+
+        if (queryParams.TryGetValue("userId", out var userIdStr) && int.TryParse(userIdStr, out var userIdParsed))
+        {
+            selectedUserId = userIdParsed;
+        }
+
+        if (queryParams.TryGetValue("teamId", out var teamIdStr) && int.TryParse(teamIdStr, out var teamIdParsed))
+        {
+            selectedTeamId = teamIdParsed;
+        }
+
+        if (queryParams.TryGetValue("startDate", out var startDateStr) && DateTime.TryParse(startDateStr, out var startDateParsed))
+        {
+            startDate = startDateParsed;
+        }
+
+        if (queryParams.TryGetValue("endDate", out var endDateStr) && DateTime.TryParse(endDateStr, out var endDateParsed))
+        {
+            // If the parsed date has no time component (00:00:00), adjust it to end of day
+            if (endDateParsed.TimeOfDay == TimeSpan.Zero)
+            {
+                endDate = endDateParsed.Date.AddDays(1).AddSeconds(-1);
+            }
+            else
+            {
+                endDate = endDateParsed;
+            }
+        }
+
+        if (queryParams.TryGetValue("includePR", out var includePRStr) && bool.TryParse(includePRStr, out var includePRParsed))
+        {
+            includePR = includePRParsed;
+        }
+
+        if (queryParams.TryGetValue("showExcluded", out var showExcludedStr) && bool.TryParse(showExcludedStr, out var showExcludedParsed))
+        {
+            showExcluded = showExcludedParsed;
+        }
+    }
+
+    private async Task LoadDashboardData()
+    {
+        isLoading = true;
+        errorMessage = null;
+        _chartsRendered = false;
+
+        try
+        {
+            if (!WorkspaceService.HasSelectedWorkspace)
+            {
+                errorMessage = "No workspace selected. Please configure workspace in Settings.";
+                return;
+            }
+
+            var url = $"api/userdashboard?workspace={WorkspaceService.SelectedWorkspace}";
+            
+            // Add date filters only if they have values (handle "All Time" scenario)
+            if (startDate.HasValue)
+            {
+                url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            }
+            if (endDate.HasValue)
+            {
+                url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            }
+            
+            // Add repository filter if specific repo is selected
+            if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "all")
+            {
+                url += $"&repoSlug={selectedRepoSlug}";
+            }
+            
+            // Add user or team filter based on filter type
+            if (filterType == "user" && selectedUserId.HasValue)
+            {
+                url += $"&userId={selectedUserId.Value}";
+            }
+            else if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value > 0)
+            {
+                url += $"&teamId={selectedTeamId.Value}";
+            }
+
+            // Add filter parameters that might affect data aggregation
+            url += $"&includePR={includePR.ToString().ToLower()}";
+            url += $"&showExcluded={showExcluded.ToString().ToLower()}";
+
+            dashboardData = await Http.GetFromJsonAsync<UserDashboardResponseDto>(url);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading dashboard data: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+
+        // Load punchcard data separately
+        await LoadPunchcardData();
+    }
+
+    private async Task LoadPunchcardData()
+    {
+        try
+        {
+            isLoadingPunchcard = true;
+            errorMessage = null;
+
+            if (!WorkspaceService.HasSelectedWorkspace)
+            {
+                return;
+            }
+
+            var url = $"api/analytics/commit-punchcard?workspace={WorkspaceService.SelectedWorkspace}";
+            
+            // Add date filters only if they have values (handle "All Time" scenario)
+            if (startDate.HasValue)
+            {
+                url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            }
+            if (endDate.HasValue)
+            {
+                url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            }
+            
+            // Add repository filter if specific repo is selected
+            if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "all")
+            {
+                url += $"&repoSlug={selectedRepoSlug}";
+            }
+            
+            // Add user or team filter based on filter type
+            if (filterType == "user" && selectedUserId.HasValue)
+            {
+                url += $"&userId={selectedUserId.Value}";
+            }
+            else if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value > 0)
+            {
+                url += $"&teamId={selectedTeamId.Value}";
+            }
+
+            punchcardData = await Http.GetFromJsonAsync<List<CommitPunchcardDto>>(url);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading punchcard data: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingPunchcard = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadRepositories()
+    {
+        try
+        {
+            isLoadingRepos = true;
+        repositories = await Http.GetFromJsonAsync<IEnumerable<RepositorySummaryDto>>("api/analytics/repositories");
+        if (repositories != null)
+        {
+            repositories = repositories.Where(r => !r.ExcludeFromReporting).ToArray();
+        }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading repositories: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingRepos = false;
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            isLoadingUsers = true;
+            users = await Http.GetFromJsonAsync<IEnumerable<UserDto>>("api/analytics/users");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading users: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingUsers = false;
+        }
+    }
+
+    private async Task LoadTeams()
+    {
+        try
+        {
+            isLoadingTeams = true;
+            teams = await Http.GetFromJsonAsync<IEnumerable<TeamSummaryDto>>("api/teams");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading teams: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingTeams = false;
+        }
+    }
+
+    private async Task OnRepositoryChanged(object? value)
+    {
+        var slug = value?.ToString();
+        selectedRepoSlug = slug;
+        // Don't load data - wait for Search button
+    }
+
+    private async Task OnUserChanged(object? value)
+    {
+        var userId = value != null ? (int?)Convert.ToInt32(value) : null;
+        selectedUserId = userId;
+        // Don't load data - wait for Search button
+    }
+
+    private async Task OnTeamChanged(object? value)
+    {
+        var teamId = value != null ? (int?)Convert.ToInt32(value) : null;
+        selectedTeamId = teamId;
+        // Don't load data - wait for Search button
+    }
+
+    private async Task HandleFilterTypeChanged(string newFilterType)
+    {
+        filterType = newFilterType;
+        
+        // Clear selections when switching between user and team
+        if (filterType == "user")
+        {
+            selectedTeamId = null;
+        }
+        else if (filterType == "team")
+        {
+            selectedUserId = null;
+        }
+        
+        // Don't load data - wait for Search button
+        StateHasChanged();
+    }
+
+    private IEnumerable<dynamic> GetTeamOptions()
+    {
+        var options = new List<dynamic>();
+        
+        // Add "All Teams" option
+        options.Add(new { Name = "All Teams", Id = -1 });
+        
+        // Add individual teams
+        if (teams != null)
+        {
+            foreach (var team in teams.Where(t => t.IsActive).OrderBy(t => t.Name))
+            {
+                options.Add(new { 
+                    Name = $"{team.Name} ({team.MemberCount} member{(team.MemberCount != 1 ? "s" : "")})", 
+                    Id = team.Id 
+                });
+            }
+        }
+        
+        return options;
+    }
+
+    private async Task OnDateRangeChanged()
+    {
+        // Don't load data - wait for Search button
+    }
+
+    private async Task SetDateRange(int? days)
+    {
+        if (days.HasValue)
+        {
+            // Set end date to end of today (23:59:59) to include all commits from today
+            endDate = DateTime.Today.AddDays(1).AddSeconds(-1);
+            startDate = DateTime.Today.AddDays(-days.Value);
+        }
+        else
+        {
+            startDate = null;
+            endDate = null;
+        }
+        // Don't load data - wait for Search button
+    }
+
+    private IEnumerable<dynamic> GetRepositoryOptions()
+    {
+        var options = new List<dynamic>();
+        
+        // Add "All Repositories" option
+        options.Add(new { Name = "All Repositories", Slug = "all" });
+        
+        // Add individual repositories
+        if (repositories != null)
+        {
+            options.AddRange(repositories.OrderBy(r => r.Name).Select(r => new { r.Name, r.Slug }));
+        }
+        
+        return options;
+    }
+
+    private void NavigateToSettings()
+    {
+        Navigation.NavigateTo("/admin/settings");
+    }
+
+    private async Task OnFilterChanged()
+    {
+        // Don't load data - wait for Search button
+    }
+    
+    private async Task OnSearchButtonClicked()
+    {
+        await LoadDashboardData();
+    }
+
+    private string GetRepositoryDisplayName()
+    {
+        if (string.IsNullOrEmpty(selectedRepoSlug) || selectedRepoSlug == "all")
+        {
+            return "All Repositories";
+        }
+
+        var repo = repositories?.FirstOrDefault(r => r.Slug == selectedRepoSlug);
+        return repo?.Name ?? "Unknown Repository";
+    }
+
+    private string GetDateRangeDisplay()
+    {
+        // If both dates are null, it means "All Time" is selected
+        if (!startDate.HasValue && !endDate.HasValue)
+        {
+            return "All Time";
+        }
+        
+        // If only start date is provided
+        if (startDate.HasValue && !endDate.HasValue)
+        {
+            return $"From {startDate.Value:MMM dd, yyyy}";
+        }
+        
+        // If only end date is provided
+        if (!startDate.HasValue && endDate.HasValue)
+        {
+            return $"Until {endDate.Value:MMM dd, yyyy}";
+        }
+        
+        // If both dates are provided
+        if (startDate.HasValue && endDate.HasValue)
+        {
+            // If same year, show shorter format
+            if (startDate.Value.Year == endDate.Value.Year)
+            {
+                return $"{startDate.Value:MMM dd} - {endDate.Value:MMM dd, yyyy}";
+            }
+            else
+            {
+                return $"{startDate.Value:MMM dd, yyyy} - {endDate.Value:MMM dd, yyyy}";
+            }
+        }
+        
+        return "All Time"; // Fallback
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_chartsRendered && dashboardData != null)
+        {
+            _chartsRendered = true;
+
+            if (dashboardData.PrAgeGraphData != null)
+            {
+                await RenderPrAgeChart(dashboardData.PrAgeGraphData);
+            }
+
+            if (dashboardData.PrsMergedByWeekdayData?.MergedPrsByWeekday != null)
+            {
+                await RenderPrsMergedByWeekdayChart(dashboardData.PrsMergedByWeekdayData.MergedPrsByWeekday);
+            }
+        }
+    }
+
+    private async Task RenderPrAgeChart(PrAgeGraph prAgeGraphData)
+    {
+        await JSRuntime.InvokeVoidAsync("renderPrAgeChart", prAgeGraphData);
+    }
+
+    private async Task RenderPrsMergedByWeekdayChart(List<WeekdayPrCount> prsMergedByWeekdayData)
+    {
+        await JSRuntime.InvokeVoidAsync("renderPrsMergedByWeekdayChart", prsMergedByWeekdayData);
+    }
+
+    private void NavigateToUserCommits(string userName)
+    {
+        // Find the user ID from the users collection
+        var user = users?.FirstOrDefault(u => u.DisplayName == userName);
+        if (user == null)
+        {
+            errorMessage = $"Could not find user ID for {userName}";
+            return;
+        }
+
+        var url = "/commits";
+        var queryParams = new List<string>();
+
+        // Add referrer information for back navigation
+        queryParams.Add("referrer=userdashboard");
+        
+        // Add user filter
+        queryParams.Add($"userId={user.Id}");
+        
+        // Add date filters if they exist
+        if (startDate.HasValue)
+        {
+            queryParams.Add($"startDate={startDate.Value:yyyy-MM-dd}");
+        }
+        if (endDate.HasValue)
+        {
+            queryParams.Add($"endDate={endDate.Value:yyyy-MM-dd}");
+        }
+        
+        // Add repository filter if specific repo is selected
+        if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "all")
+        {
+            queryParams.Add($"repoSlug={selectedRepoSlug}");
+        }
+        
+        // Add other filters
+        queryParams.Add($"includePR={includePR.ToString().ToLower()}");
+        queryParams.Add($"showExcluded={showExcluded.ToString().ToLower()}");
+
+        if (queryParams.Any())
+        {
+            url += "?" + string.Join("&", queryParams);
+        }
+
+        Navigation.NavigateTo(url);
+    }
+} 
