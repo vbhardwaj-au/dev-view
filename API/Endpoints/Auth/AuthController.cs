@@ -125,6 +125,7 @@ namespace API.Endpoints.Auth
 
             await conn.OpenAsync();
             using var transaction = conn.BeginTransaction();
+            var transactionCommitted = false;
             
             try
             {
@@ -164,6 +165,7 @@ namespace API.Endpoints.Auth
                     transaction);
 
                 await transaction.CommitAsync();
+                transactionCommitted = true;
 
                 _logger.LogInformation("Initial admin user created: {Username}", req.Username);
 
@@ -178,7 +180,11 @@ namespace API.Endpoints.Auth
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
+                // Only rollback if the transaction hasn't been committed yet
+                if (!transactionCommitted)
+                {
+                    await transaction.RollbackAsync();
+                }
                 _logger.LogError(ex, "Failed to create initial admin user");
                 return StatusCode(500, "Failed to create admin user");
             }
