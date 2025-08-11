@@ -209,12 +209,12 @@ namespace Integration.Commits
             var fileRecords = fileChanges.Select(fc => new
             {
                 CommitId = commitId,
-                FilePath = fc.FilePath,
+                FilePath = fc.FilePath?.Trim() ?? fc.FilePath, // Trim any trailing whitespace
                 FileType = fc.FileType.ToString().ToLower(),
                 ChangeStatus = fc.ChangeStatus,
                 LinesAdded = fc.LinesAdded,
                 LinesRemoved = fc.LinesRemoved,
-                FileExtension = fc.FileExtension,
+                FileExtension = fc.FileExtension?.Trim() ?? fc.FileExtension, // Also trim file extension
                 CreatedOn = DateTime.UtcNow,
                 ExcludeFromReporting = false // Default to false for new files
             }).ToArray();

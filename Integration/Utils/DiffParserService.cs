@@ -68,7 +68,7 @@ namespace Integration.Utils
                     var match = Regex.Match(line, @"diff --git a/(.*?) b/(.*)");
                     if (match.Success)
                     {
-                        currentFile = match.Groups[2].Value; // Use the "b/" version (after changes)
+                        currentFile = match.Groups[2].Value.Trim(); // Use the "b/" version (after changes) and trim whitespace
                     }
                 }
                 else if (line.StartsWith("+++"))
@@ -76,7 +76,7 @@ namespace Integration.Utils
                     var match = Regex.Match(line, @"\+\+\+ b/(.*)");
                     if (match.Success)
                     {
-                        currentFile = match.Groups[1].Value;
+                        currentFile = match.Groups[1].Value.Trim(); // Trim whitespace from file path
                         
                         if (!currentFileChanges.ContainsKey(currentFile))
                         {

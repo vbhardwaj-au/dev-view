@@ -161,6 +161,9 @@ namespace Integration.Utils
                 return FileType.Other;
             }
 
+            // Trim any trailing whitespace from the file path
+            filePath = filePath?.Trim() ?? string.Empty;
+            
             var fileName = Path.GetFileName(filePath);
             var extension = Path.GetExtension(filePath);
             var normalizedPath = NormalizePath(filePath);

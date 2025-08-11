@@ -9,6 +9,7 @@
 using Data.Models;
 using API.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Entities.DTOs.Analytics;
 using Entities.DTOs.Teams;
 using System;
@@ -21,10 +22,12 @@ namespace API.Endpoints.Analytics
     public class AnalyticsController : ControllerBase
     {
         private readonly AnalyticsService _analyticsService;
+        private readonly ILogger<AnalyticsController> _logger;
 
-        public AnalyticsController(AnalyticsService analyticsService)
+        public AnalyticsController(AnalyticsService analyticsService, ILogger<AnalyticsController> logger)
         {
             _analyticsService = analyticsService;
+            _logger = logger;
         }
 
         [HttpGet("commits/activity")]
@@ -310,12 +313,22 @@ namespace API.Endpoints.Analytics
         [HttpPut("commit-files")]
         public async Task<IActionResult> UpdateCommitFile([FromBody] CommitFileUpdateDto updateDto)
         {
-            if (updateDto == null)
+            try
             {
-                return BadRequest("Update data must be provided.");
+                if (updateDto == null)
+                {
+                    return BadRequest("Update data must be provided.");
+                }
+                
+                _logger.LogInformation($"Updating commit file ID {updateDto.FileId}, Property: {updateDto.PropertyName}, Value: {updateDto.Value}");
+                await _analyticsService.UpdateCommitFileAsync(updateDto);
+                return NoContent();
             }
-            await _analyticsService.UpdateCommitFileAsync(updateDto);
-            return NoContent();
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating commit file ID {updateDto?.FileId}");
+                return StatusCode(500, $"Error updating commit file: {ex.Message}");
+            }
         }
 
         [HttpPost("users/{userId}/flags")]

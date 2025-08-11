@@ -22,10 +22,12 @@ namespace API.Services
     public class AnalyticsService
     {
         private readonly string _connectionString;
+        private readonly ILogger<AnalyticsService> _logger;
 
-        public AnalyticsService(BitbucketConfig config)
+        public AnalyticsService(BitbucketConfig config, ILogger<AnalyticsService> logger)
         {
             _connectionString = config.DbConnectionString;
+            _logger = logger;
         }
 
         /// <summary>
@@ -889,21 +891,71 @@ namespace API.Services
                 throw new ArgumentException($"Invalid property name: {updateDto.PropertyName}");
             }
             
-            // Validate FileType values
+            // First, handle JsonElement conversion
+            object? rawValue = updateDto.Value;
+            if (updateDto.Value is System.Text.Json.JsonElement jsonElement)
+            {
+                // Convert JsonElement to appropriate type
+                if (updateDto.PropertyName == "ExcludeFromReporting")
+                {
+                    if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.True)
+                    {
+                        rawValue = true;
+                    }
+                    else if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.False)
+                    {
+                        rawValue = false;
+                    }
+                    else
+                    {
+                        throw new ArgumentException($"Invalid boolean JsonElement for ExcludeFromReporting: {jsonElement}");
+                    }
+                }
+                else if (updateDto.PropertyName == "FileType")
+                {
+                    rawValue = jsonElement.GetString();
+                }
+            }
+            
+            object? valueToUpdate = rawValue;
+            
+            // Handle different property types
             if (updateDto.PropertyName == "FileType")
             {
                 var allowedFileTypes = new List<string> { "code", "data", "config", "docs", "other" };
-                var fileTypeValue = updateDto.Value?.ToString()?.ToLower();
+                var fileTypeValue = rawValue?.ToString()?.ToLower();
                 if (string.IsNullOrEmpty(fileTypeValue) || !allowedFileTypes.Contains(fileTypeValue))
                 {
                     throw new ArgumentException($"Invalid file type: {fileTypeValue}. Allowed values: {string.Join(", ", allowedFileTypes)}");
                 }
-                updateDto.Value = fileTypeValue;
+                valueToUpdate = fileTypeValue;
+            }
+            else if (updateDto.PropertyName == "ExcludeFromReporting")
+            {
+                // Ensure boolean conversion for ExcludeFromReporting
+                if (rawValue != null)
+                {
+                    bool booleanValue;
+                    
+                    if (rawValue is bool directBool)
+                    {
+                        booleanValue = directBool;
+                    }
+                    else if (bool.TryParse(rawValue.ToString(), out var parsedBool))
+                    {
+                        booleanValue = parsedBool;
+                    }
+                    else
+                    {
+                        throw new ArgumentException($"Invalid boolean value for ExcludeFromReporting: {rawValue}");
+                    }
+                    
+                    valueToUpdate = booleanValue ? 1 : 0;  // Convert to SQL bit value
+                }
             }
 
             var sql = $"UPDATE CommitFiles SET {updateDto.PropertyName} = @Value WHERE Id = @FileId;";
-
-            await connection.ExecuteAsync(sql, new { updateDto.FileId, updateDto.Value });
+            await connection.ExecuteAsync(sql, new { FileId = updateDto.FileId, Value = valueToUpdate });
         }
 
         private string GetCommitterRankingQuery(bool includePR, bool includeData, bool includeConfig)
