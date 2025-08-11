@@ -1101,32 +1101,32 @@
         }
     }
 
-    private async Task OnRepositorySelected(string? repoSlug)
+    private void OnRepositorySelected(string? repoSlug)
     {
         selectedRepoSlug = repoSlug;
         // Don't update JS variables here - wait for Search button
     }
 
-    private async Task OnDateRangeUpdated((DateTime? start, DateTime? end) dates)
+    private void OnDateRangeUpdated((DateTime? start, DateTime? end) dates)
     {
         startDate = dates.start;
         endDate = dates.end;  // This now receives the adjusted end date (23:59:59) from CommitsFilter
     }
 
-    private async Task OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
+    private void OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
     {
         includePR = filters.includePR;
         includeData = filters.includeData;
         includeConfig = filters.includeConfig;
     }
 
-    private async Task OnGroupingUpdated(string grouping)
+    private void OnGroupingUpdated(string grouping)
     {
         selectedGrouping = grouping;
         // Don't update JS variables here - wait for Search button
     }
 
-    private async Task OnShowExcludedChanged(bool value)
+    private void OnShowExcludedChanged(bool value)
     {
         showExcluded = value;
     }
@@ -1467,17 +1467,17 @@
     }
 
     // Event handlers for filtering
-    private async Task OnUserSelected(int? userId)
+    private void OnUserSelected(int? userId)
     {
         selectedUserId = userId;
     }
 
-    private async Task OnTeamSelected(int? teamId)
+    private void OnTeamSelected(int? teamId)
     {
         selectedTeamId = teamId;
     }
 
-    private async Task OnFilterTypeChanged(string newFilterType)
+    private void OnFilterTypeChanged(string newFilterType)
     {
         filterType = newFilterType;
         // Clear the opposite filter when switching

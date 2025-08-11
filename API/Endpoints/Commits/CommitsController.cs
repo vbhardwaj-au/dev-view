@@ -29,12 +29,14 @@ namespace API.Endpoints.Commits
         [HttpGet("{repoSlug}")]
         public async Task<IActionResult> GetCommits(
             string repoSlug,
+            string? workspace = null,
             int page = 1,
             int pageSize = DefaultPageSize,
             bool includePR = true,
             bool includeData = true,
             bool includeConfig = true,
             int? userId = null,
+            int? teamId = null,
             DateTime? startDate = null,
             DateTime? endDate = null,
             bool showExcluded = false)
@@ -60,19 +62,24 @@ namespace API.Endpoints.Commits
             var where = "WHERE 1=1";
             if (repoId.HasValue)
                 where += " AND c.RepositoryId = @repoId";
+            else if (!string.IsNullOrEmpty(workspace))
+                where += " AND r.Workspace = @workspace"; // When "all" repos, filter by workspace
             if (!includePR)
                 where += " AND c.IsPRMergeCommit = 0";
             if (userId.HasValue)
                 where += " AND c.AuthorId = @userId";
+            if (teamId.HasValue && teamId.Value > 0)
+                where += " AND c.AuthorId IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId)";
             if (startDate.HasValue)
                 where += " AND c.Date >= @startDate";
             if (endDate.HasValue)
                 where += " AND c.Date <= @endDate";
             where += " AND c.IsRevert = 0";
+            where += " AND r.ExcludeFromReporting = 0"; // Filter out excluded repositories
 
             // Count total commits
             var countSql = $"SELECT COUNT(*) FROM Commits c JOIN Repositories r ON c.RepositoryId = r.Id {where}";
-            var totalCount = await connection.QuerySingleAsync<int>(countSql, new { repoId, userId, startDate, endDate });
+            var totalCount = await connection.QuerySingleAsync<int>(countSql, new { repoId, workspace, userId, teamId, startDate, endDate });
             var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
             // Calculate aggregated line counts
@@ -101,7 +108,7 @@ namespace API.Endpoints.Commits
                     {where}
                 ) AS SubqueryAlias";
             
-            var aggregatedData = await connection.QuerySingleOrDefaultAsync<dynamic>(aggregatedLinesSql, new { repoId, userId, startDate, endDate });
+            var aggregatedData = await connection.QuerySingleOrDefaultAsync<dynamic>(aggregatedLinesSql, new { repoId, workspace, userId, teamId, startDate, endDate });
 
             // Query paginated commits with author info and repository info
             var sql = $@"
@@ -128,7 +135,9 @@ namespace API.Endpoints.Commits
             var commitList = (await connection.QueryAsync<CommitListItemDto>(sql, new
             {
                 repoId,
+                workspace,
                 userId,
+                teamId,
                 startDate,
                 endDate,
                 offset = (page - 1) * pageSize,

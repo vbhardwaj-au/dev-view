@@ -143,10 +143,10 @@
                                                 }
                                             </td>
                                             <td>
-                                                <input type="checkbox" class="form-check-input" checked="@repo.ExcludeFromSync" @onchange="async e => await UpdateFlag(repo, nameof(repo.ExcludeFromSync), (bool)e.Value)" />
+                                                <input type="checkbox" class="form-check-input" checked="@repo.ExcludeFromSync" @onchange="async e => await UpdateFlag(repo, nameof(repo.ExcludeFromSync), (bool)(e.Value ?? false))" />
                                             </td>
                                             <td>
-                                                <input type="checkbox" class="form-check-input" checked="@repo.ExcludeFromReporting" @onchange="async e => await UpdateFlag(repo, nameof(repo.ExcludeFromReporting), (bool)e.Value)" />
+                                                <input type="checkbox" class="form-check-input" checked="@repo.ExcludeFromReporting" @onchange="async e => await UpdateFlag(repo, nameof(repo.ExcludeFromReporting), (bool)(e.Value ?? false))" />
                                             </td>
                                             <td>
                                                 <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => NavigateToCommits(repo)">

@@ -847,7 +847,7 @@
         StateHasChanged();
     }
 
-    private async Task OnUserSearchChanged(ChangeEventArgs e)
+    private void OnUserSearchChanged(ChangeEventArgs e)
     {
         userSearchText = e.Value?.ToString() ?? "";
         

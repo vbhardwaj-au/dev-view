@@ -334,47 +334,47 @@
         }
     }
 
-    private async Task OnRepositorySelected(string repoSlug)
+    private void OnRepositorySelected(string repoSlug)
     {
         selectedRepoSlug = repoSlug;
         // Don't update JS variables or refresh data - wait for Search button
     }
 
-    private async Task OnDateRangeUpdated((DateTime? start, DateTime? end) range)
+    private void OnDateRangeUpdated((DateTime? start, DateTime? end) range)
     {
         startDate = range.start;
         endDate = range.end;  // This now receives the adjusted end date (23:59:59) from CommitsFilter
     }
 
-    private async Task OnGroupingUpdated(string grouping)
+    private void OnGroupingUpdated(string grouping)
     {
         selectedGrouping = grouping;
     }
 
-    private async Task OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
+    private void OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
     {
         this.includePR = filters.includePR;
         this.includeData = filters.includeData;
         this.includeConfig = filters.includeConfig;
     }
 
-    private async Task OnShowExcludedChanged(bool excluded)
+    private void OnShowExcludedChanged(bool excluded)
     {
         showExcluded = excluded;
     }
 
     // Event handlers for filtering
-    private async Task OnUserSelected(int? userId)
+    private void OnUserSelected(int? userId)
     {
         selectedUserId = userId;
     }
 
-    private async Task OnTeamSelected(int? teamId)
+    private void OnTeamSelected(int? teamId)
     {
         selectedTeamId = teamId;
     }
 
-    private async Task OnFilterTypeChanged(string newFilterType)
+    private void OnFilterTypeChanged(string newFilterType)
     {
         filterType = newFilterType;
         // Clear the opposite filter when switching

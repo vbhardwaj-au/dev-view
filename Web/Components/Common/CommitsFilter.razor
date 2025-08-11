@@ -93,7 +93,7 @@
                                   FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                                   Placeholder="Search repositories..."
                                   Value="@SelectedRepoSlug"
-                                  Change="@(args => OnRepositoryChanged(args))"
+                                  Change="@OnRepositoryChanged"
                                   class="w-100" />
                 }
                 else
@@ -172,7 +172,7 @@
                                           FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                                           Placeholder="Search users..."
                                           Value="@SelectedUserId"
-                                          Change="@(args => OnUserChanged(args))"
+                                          Change="@OnUserChanged"
                                           class="w-100" />
                         }
                         else
@@ -207,7 +207,7 @@
                                           FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                                           Placeholder="Search teams..."
                                           Value="@SelectedTeamId"
-                                          Change="@(args => OnTeamChanged(args))"
+                                          Change="@OnTeamChanged"
                                           class="w-100" />
                         }
                         else
@@ -454,7 +454,7 @@
     [Parameter]
     public EventCallback OnSearchButtonClicked { get; set; }
 
-    private async Task OnRepositoryChanged(object? value)
+    private void OnRepositoryChanged(object? value)
     {
         var slug = value?.ToString();
         SelectedRepoSlug = slug;
@@ -475,21 +475,21 @@
         return options;
     }
 
-    private async Task OnUserChanged(object? value)
+    private void OnUserChanged(object? value)
     {
         var userId = value != null ? (int?)Convert.ToInt32(value) : null;
         SelectedUserId = userId;
         // Don't invoke callback - wait for Search button
     }
 
-    private async Task OnTeamChanged(object? value)
+    private void OnTeamChanged(object? value)
     {
         var teamId = value != null ? (int?)Convert.ToInt32(value) : null;
         SelectedTeamId = teamId;
         // Don't invoke callback - wait for Search button
     }
 
-    private async Task HandleFilterTypeChanged(string filterType)
+    private void HandleFilterTypeChanged(string filterType)
     {
         // Prevent switching to user filter if it's disabled
         if (filterType == "user" && DisableIndividualFilter)
@@ -545,12 +545,12 @@
         return options.OrderBy(t => t.Name == "All Teams" ? "" : t.Name);
     }
 
-    private async Task OnDateRangeChanged(DateTime? date)
+    private void OnDateRangeChanged(DateTime? date)
     {
         // Don't invoke callback - wait for Search button
     }
 
-    private async Task SetDateRange(int? days)
+    private void SetDateRange(int? days)
     {
         if (days.HasValue)
         {
@@ -565,12 +565,12 @@
         // Don't invoke callback - wait for Search button
     }
 
-    private async Task OnFilterChanged()
+    private void OnFilterChanged()
     {
         // Don't invoke callback - wait for Search button
     }
 
-    private async Task OnGroupingChanged()
+    private void OnGroupingChanged()
     {
         // Don't invoke callback - wait for Search button
     }

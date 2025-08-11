@@ -204,12 +204,15 @@ namespace API.Endpoints.Auth
                 req != null, req?.Username, req?.Password?.Length ?? 0, Request?.ContentType, Request?.ContentLength);
             try
             {
-                Request.EnableBuffering();
-                Request.Body.Position = 0;
-                using var reader = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-                var raw = await reader.ReadToEndAsync();
-                Request.Body.Position = 0;
-                _logger.LogInformation("[Auth] Raw body: {Raw}", raw);
+                if (Request != null)
+                {
+                    Request.EnableBuffering();
+                    Request.Body.Position = 0;
+                    using var reader = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+                    var raw = await reader.ReadToEndAsync();
+                    Request.Body.Position = 0;
+                    _logger.LogInformation("[Auth] Raw body: {Raw}", raw);
+                }
             }
             catch (Exception ex)
             {

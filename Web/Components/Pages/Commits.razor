@@ -515,12 +515,23 @@
             var repoSlug = string.IsNullOrEmpty(selectedRepoSlug) ? "all" : selectedRepoSlug;
             
             var url = $"api/commits/{repoSlug}?page={currentPage}&pageSize={pageSize}&includePR={includePR.ToString().ToLower()}";
+            
+            // Add workspace when querying all repositories
+            if (repoSlug == "all" && WorkspaceService.HasSelectedWorkspace)
+            {
+                url += $"&workspace={WorkspaceService.SelectedWorkspace}";
+            }
+            
             if (startDate.HasValue) url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
             if (endDate.HasValue) url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
             
             // Add user/team filtering
             if (filterType == "user" && selectedUserId.HasValue) url += $"&userId={selectedUserId.Value}";
             if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1) url += $"&teamId={selectedTeamId.Value}";
+            
+            // Add content filters to match the graph
+            url += $"&includeData={includeData.ToString().ToLower()}";
+            url += $"&includeConfig={includeConfig.ToString().ToLower()}";
             
             if (showExcluded) url += "&showExcluded=true";
 
@@ -587,13 +598,13 @@
         }
     }
 
-    private async Task OnRepositorySelected(string? slug)
+    private void OnRepositorySelected(string? slug)
     {
         selectedRepoSlug = slug;
         currentPage = 1;
     }
 
-    private async Task OnUserSelected(int? userId)
+    private void OnUserSelected(int? userId)
     {
         selectedUserId = userId;
         currentPage = 1;
@@ -609,13 +620,13 @@
         }
     }
 
-    private async Task OnTeamSelected(int? teamId)
+    private void OnTeamSelected(int? teamId)
     {
         selectedTeamId = teamId;
         currentPage = 1;
     }
 
-    private async Task OnFilterTypeChanged(string newFilterType)
+    private void OnFilterTypeChanged(string newFilterType)
     {
         filterType = newFilterType;
         // Clear the opposite filter when switching
@@ -631,20 +642,20 @@
         currentPage = 1;
     }
 
-    private async Task OnDateRangeUpdated((DateTime? newStartDate, DateTime? newEndDate) dateRange)
+    private void OnDateRangeUpdated((DateTime? newStartDate, DateTime? newEndDate) dateRange)
     {
         startDate = dateRange.newStartDate;
         endDate = dateRange.newEndDate;  // This now receives the adjusted end date (23:59:59) from CommitsFilter
         currentPage = 1;
     }
 
-    private async Task OnGroupingUpdated(string? newGrouping)
+    private void OnGroupingUpdated(string? newGrouping)
     {
         groupBy = newGrouping ?? "Day";
         // Note: We don't reset currentPage here because grouping only affects the chart, not the table
     }
 
-    private async Task OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
+    private void OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
     {
         this.includePR = filters.includePR;
         this.includeData = filters.includeData;
@@ -652,7 +663,7 @@
         currentPage = 1;
     }
 
-    private async Task OnShowExcludedChanged(bool value)
+    private void OnShowExcludedChanged(bool value)
     {
         showExcluded = value;
     }
