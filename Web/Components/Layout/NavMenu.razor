@@ -38,23 +38,28 @@
         <!-- Only show menu items when authenticated -->
         <AuthorizeView>
             <Authorized>
-                <!-- Dashboards Section -->
+                <!-- Dashboard Group -->
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                        <span class="bi bi-bar-chart-fill" aria-hidden="true"></span> Dashboard
-                    </NavLink>
-                </div>
-
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="user-dashboard">
-                        <span class="bi bi-speedometer2" aria-hidden="true"></span> Commits Dashboard
-                    </NavLink>
-                </div>
-
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="pr-dashboard">
-                        <span class="bi bi-graph-up" aria-hidden="true"></span> PR Dashboard
-                    </NavLink>
+                    <div class="nav-link dropdown-toggle" data-bs-toggle="collapse" data-bs-target="#dashboardSubmenu" aria-expanded="true" aria-controls="dashboardSubmenu" style="cursor: pointer;">
+                        <span class="bi bi-speedometer2" aria-hidden="true"></span> Dashboard
+                    </div>
+                    <div class="collapse show" id="dashboardSubmenu">
+                        <div class="nav-item ps-4">
+                            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                                <span class="bi bi-house-door" aria-hidden="true"></span> Main
+                            </NavLink>
+                        </div>
+                        <div class="nav-item ps-4">
+                            <NavLink class="nav-link" href="user-dashboard">
+                                <span class="bi bi-git" aria-hidden="true"></span> Commits
+                            </NavLink>
+                        </div>
+                        <div class="nav-item ps-4">
+                            <NavLink class="nav-link" href="pr-dashboard">
+                                <span class="bi bi-diagram-2" aria-hidden="true"></span> PR
+                            </NavLink>
+                        </div>
+                    </div>
                 </div>
 
                 <hr class="text-light my-2" />
