@@ -13,10 +13,10 @@
 <style>
     .filter-container {
         background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-radius: 15px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
     
     .filter-card {
@@ -56,13 +56,39 @@
         transform: scale(1.05);
     }
     
+    .kpi-card {
+        height: 140px !important;
+    }
+    
+    .kpi-card .card-body {
+        padding: 0.75rem !important;
+    }
+    
+    .kpi-card .card-title {
+        font-size: 0.7rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    .kpi-card h2 {
+        font-size: 1.75rem !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .kpi-card .small {
+        font-size: 0.7rem !important;
+    }
+    
+    .kpi-card .bi {
+        font-size: 1.5rem !important;
+    }
+    
     @@media (max-width: 768px) {
         .filter-container {
-            padding: 15px;
+            padding: 10px;
         }
         
         .row.g-3 > * {
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
     }
 </style>
@@ -100,8 +126,8 @@
                 <!-- Repository Filter -->
                 <div class="col-md-3">
                     <div class="card filter-card h-100 border-primary border-opacity-25">
-                        <div class="card-body p-3">
-                            <h6 class="card-title text-primary mb-3">
+                        <div class="card-body p-2">
+                            <h6 class="card-title text-primary mb-2" style="font-size: 0.85rem;">
                                 <i class="bi bi-folder2-open me-2"></i>Repository
                             </h6>
                             @if (isLoadingRepos)
@@ -135,18 +161,18 @@
                 <!-- User/Team Filter -->
                 <div class="col-md-4">
                     <div class="card filter-card h-100 border-success border-opacity-25">
-                        <div class="card-body p-3">
-                            <h6 class="card-title text-success mb-3">
+                        <div class="card-body p-2">
+                            <h6 class="card-title text-success mb-2" style="font-size: 0.85rem;">
                                 <i class="bi bi-people me-2"></i>Filter By
                             </h6>
                             
                             <!-- Radio buttons for selection type -->
-                            <div class="row g-2 mb-3">
+                            <div class="row g-2 mb-2">
                                 <div class="col-6">
                                     <div class="form-check">
                                         <input class="form-check-input" type="radio" name="filterType" id="filterByUser" 
                                                checked="@(filterType == "user")" @onchange="@(() => HandleFilterTypeChanged("user"))" />
-                                        <label class="form-check-label fw-medium" for="filterByUser">
+                                        <label class="form-check-label fw-medium" for="filterByUser" style="font-size: 0.8rem;">
                                             <i class="bi bi-person me-1"></i>Individual
                                         </label>
                                     </div>
@@ -155,7 +181,7 @@
                                     <div class="form-check">
                                         <input class="form-check-input" type="radio" name="filterType" id="filterByTeam" 
                                                checked="@(filterType == "team")" @onchange="@(() => HandleFilterTypeChanged("team"))" />
-                                        <label class="form-check-label fw-medium" for="filterByTeam">
+                                        <label class="form-check-label fw-medium" for="filterByTeam" style="font-size: 0.8rem;">
                                             <i class="bi bi-people-fill me-1"></i>Team
                                         </label>
                                     </div>
@@ -236,18 +262,18 @@
                 <!-- Date Range Selection -->
                 <div class="col-md-5">
                     <div class="card filter-card h-100 border-info border-opacity-25">
-                        <div class="card-body p-3">
-                            <h6 class="card-title text-info mb-3">
+                        <div class="card-body p-2">
+                            <h6 class="card-title text-info mb-2" style="font-size: 0.85rem;">
                                 <i class="bi bi-calendar-range me-2"></i>Date Range
                             </h6>
-                            <div class="row g-2 mb-3">
+                            <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <label class="form-label small text-muted mb-1">Start Date</label>
+                                    <label class="form-label small text-muted mb-1" style="font-size: 0.7rem;">Start Date</label>
                                     <RadzenDatePicker @bind-Value="startDate" DateFormat="MM/dd/yyyy" Placeholder="Start Date" 
                                                     Change="@(() => OnDateRangeChanged())" class="w-100" />
                                 </div>
                                 <div class="col-6">
-                                    <label class="form-label small text-muted mb-1">End Date</label>
+                                    <label class="form-label small text-muted mb-1" style="font-size: 0.7rem;">End Date</label>
                                     <RadzenDatePicker @bind-Value="endDate" DateFormat="MM/dd/yyyy" Placeholder="End Date" 
                                                     Change="@(() => OnDateRangeChanged())" class="w-100" />
                                 </div>
@@ -280,8 +306,8 @@
                 <!-- Content Filters -->
                 <div class="col-md-12">
                     <div class="card filter-card border-warning border-opacity-25">
-                        <div class="card-body p-3">
-                            <h6 class="card-title text-warning mb-3">
+                        <div class="card-body p-2">
+                            <h6 class="card-title text-warning mb-2" style="font-size: 0.85rem;">
                                 <i class="bi bi-funnel me-2"></i>Content Filters
                             </h6>
                             <div class="row g-3">
@@ -349,7 +375,7 @@
         <div class="row">
             <!-- Active Contributing Users -->
             <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm h-100">
+                <div class="card shadow-sm kpi-card">
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-start">
                             <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-3">Active Contributing Users</h5>
@@ -377,7 +403,7 @@
 
             <!-- Total Commits -->
             <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm h-100">
+                <div class="card shadow-sm kpi-card">
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Total Commits</h5>
@@ -405,7 +431,7 @@
 
             <!-- Repositories Updated -->
             <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm h-100">
+                <div class="card shadow-sm kpi-card">
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Repositories Updated</h5>
@@ -433,7 +459,7 @@
 
             <!-- PRs Not Approved and Merged -->
             <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm h-100">
+                <div class="card shadow-sm kpi-card">
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">PRs Not Approved and Merged</h5>
@@ -450,7 +476,7 @@
 
             <!-- Users Count with No Activity -->
             <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm h-100">
+                <div class="card shadow-sm kpi-card">
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Users with No Activity</h5>
@@ -467,7 +493,7 @@
 
             <!-- PRs Merged by Weekday Chart -->
             <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm h-100">
+                <div class="card shadow-sm kpi-card">
                     <div class="card-body d-flex flex-column">
                         <div class="row align-items-center">
                             <div class="col-6">
@@ -491,6 +517,83 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Net Lines (Added - Removed) -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm kpi-card">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Net Lines</h5>
+                            <i class="bi bi-plus-slash-minus text-secondary fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            @{
+                                var netLines = (dashboardData.CurrentPeriod.TotalLinesAdded ?? 0) - (dashboardData.CurrentPeriod.TotalLinesRemoved ?? 0);
+                                var netLinesClass = netLines >= 0 ? "text-success" : "text-danger";
+                            }
+                            <span class="@netLinesClass">@netLines.ToString("+#,##0;-#,##0;0")</span>
+                        </h2>
+                        <p class="text-muted small mb-0">Added - Removed</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Code Lines Added -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm kpi-card">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Code Lines Added</h5>
+                            <i class="bi bi-code-slash text-success fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            <span class="text-success">+@((dashboardData.CurrentPeriod.CodeLinesAdded ?? 0).ToString("#,##0"))</span>
+                            @{
+                                var codeAddedChange = (double)(dashboardData.CurrentPeriod.CodeLinesAdded ?? 0) - (dashboardData.PreviousPeriod.CodeLinesAdded ?? 0);
+                                var codeAddedPercentageChange = (dashboardData.PreviousPeriod.CodeLinesAdded ?? 0) > 0
+                                    ? (codeAddedChange / (dashboardData.PreviousPeriod.CodeLinesAdded ?? 1)) * 100
+                                    : 0;
+                                var codeAddedChangeClass = codeAddedPercentageChange >= 0 ? "text-success" : "text-danger";
+                                var codeAddedChangeIcon = codeAddedPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
+                            }
+                            <span class="fs-6 @codeAddedChangeClass">
+                                <i class="bi @codeAddedChangeIcon"></i> @codeAddedPercentageChange.ToString("0.0")%
+                            </span>
+                        </h2>
+                        <p class="text-muted small mb-0">Last period: @((dashboardData.PreviousPeriod.CodeLinesAdded ?? 0).ToString("#,##0"))</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Code Lines Removed -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm kpi-card">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Code Lines Removed</h5>
+                            <i class="bi bi-dash-circle text-danger fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            <span class="text-danger">-@((dashboardData.CurrentPeriod.CodeLinesRemoved ?? 0).ToString("#,##0"))</span>
+                            @{
+                                var codeRemovedChange = (double)(dashboardData.CurrentPeriod.CodeLinesRemoved ?? 0) - (dashboardData.PreviousPeriod.CodeLinesRemoved ?? 0);
+                                var codeRemovedPercentageChange = (dashboardData.PreviousPeriod.CodeLinesRemoved ?? 0) > 0
+                                    ? (codeRemovedChange / (dashboardData.PreviousPeriod.CodeLinesRemoved ?? 1)) * 100
+                                    : 0;
+                                var codeRemovedChangeClass = codeRemovedPercentageChange >= 0 ? "text-warning" : "text-success";
+                                var codeRemovedChangeIcon = codeRemovedPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
+                            }
+                            <span class="fs-6 @codeRemovedChangeClass">
+                                <i class="bi @codeRemovedChangeIcon"></i> @codeRemovedPercentageChange.ToString("0.0")%
+                            </span>
+                        </h2>
+                        <p class="text-muted small mb-0">Last period: @((dashboardData.PreviousPeriod.CodeLinesRemoved ?? 0).ToString("#,##0"))</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
@@ -600,7 +703,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var approver in dashboardData.TopApprovers)
+                                    @foreach (var approver in dashboardData.TopApprovers.Take(5))
                                     {
                                         <tr>
                                             <td>@approver.UserName</td>
@@ -945,21 +1048,25 @@
         StateHasChanged();
     }
 
-    private IEnumerable<dynamic> GetTeamOptions()
+    private IEnumerable<TeamSummaryDto> GetTeamOptions()
     {
-        var options = new List<dynamic>();
+        var options = new List<TeamSummaryDto>();
         
         // Add "All Teams" option
-        options.Add(new { Name = "All Teams", Id = -1 });
+        options.Add(new TeamSummaryDto { Name = "All Teams", Id = -1, MemberCount = 0, IsActive = true });
         
-        // Add individual teams
+        // Add individual teams with formatted names
         if (teams != null)
         {
             foreach (var team in teams.Where(t => t.IsActive).OrderBy(t => t.Name))
             {
-                options.Add(new { 
+                // Create a copy with modified display name
+                options.Add(new TeamSummaryDto 
+                { 
                     Name = $"{team.Name} ({team.MemberCount} member{(team.MemberCount != 1 ? "s" : "")})", 
-                    Id = team.Id 
+                    Id = team.Id,
+                    MemberCount = team.MemberCount,
+                    IsActive = team.IsActive
                 });
             }
         }
@@ -988,17 +1095,22 @@
         // Don't load data - wait for Search button
     }
 
-    private IEnumerable<dynamic> GetRepositoryOptions()
+    private IEnumerable<RepositorySummaryDto> GetRepositoryOptions()
     {
-        var options = new List<dynamic>();
+        var options = new List<RepositorySummaryDto>();
         
         // Add "All Repositories" option
-        options.Add(new { Name = "All Repositories", Slug = "all" });
+        options.Add(new RepositorySummaryDto { 
+            Name = "All Repositories", 
+            Slug = "all", 
+            Workspace = WorkspaceService.SelectedWorkspace ?? "",
+            ExcludeFromReporting = false 
+        });
         
         // Add individual repositories
         if (repositories != null)
         {
-            options.AddRange(repositories.OrderBy(r => r.Name).Select(r => new { r.Name, r.Slug }));
+            options.AddRange(repositories.OrderBy(r => r.Name));
         }
         
         return options;

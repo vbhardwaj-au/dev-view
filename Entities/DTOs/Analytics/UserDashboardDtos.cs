@@ -29,6 +29,12 @@ namespace Entities.DTOs.Analytics
         public int RepositoriesUpdated { get; set; }
         public int PrsNotApprovedAndMerged { get; set; }
         public int TotalMergedPrs { get; set; }
+        
+        // Line metrics
+        public int? TotalLinesAdded { get; set; }
+        public int? TotalLinesRemoved { get; set; }
+        public int? CodeLinesAdded { get; set; }
+        public int? CodeLinesRemoved { get; set; }
     }
 
     public class PrAgeGraph

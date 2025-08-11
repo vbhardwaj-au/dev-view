@@ -17,11 +17,13 @@ namespace API.Endpoints.Commits
     public class CommitsController : ControllerBase
     {
         private readonly string _connectionString;
+        private readonly string _reportingTimezone;
         private const int DefaultPageSize = 25;
 
         public CommitsController(IConfiguration config)
         {
             _connectionString = config.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("DefaultConnection connection string not found.");
+            _reportingTimezone = config["Application:ReportingTimezone"] ?? "UTC";
         }
 
         [HttpGet("{repoSlug}")]
@@ -103,7 +105,9 @@ namespace API.Endpoints.Commits
 
             // Query paginated commits with author info and repository info
             var sql = $@"
-                SELECT c.Id, c.BitbucketCommitHash AS Hash, c.Message, u.DisplayName AS AuthorName, c.Date, c.IsMerge, c.IsPRMergeCommit, c.IsRevert,
+                SELECT c.Id, c.BitbucketCommitHash AS Hash, c.Message, u.DisplayName AS AuthorName, 
+                       CAST(c.Date AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS Date, 
+                       c.IsMerge, c.IsPRMergeCommit, c.IsRevert,
                        c.LinesAdded, c.LinesRemoved,
                        ISNULL((SELECT SUM(cf.LinesAdded) FROM CommitFiles cf WHERE cf.CommitId = c.Id AND cf.FileType = 'code' AND cf.ExcludeFromReporting = 0), 0) AS CodeLinesAdded,
                        ISNULL((SELECT SUM(cf.LinesRemoved) FROM CommitFiles cf WHERE cf.CommitId = c.Id AND cf.FileType = 'code' AND cf.ExcludeFromReporting = 0), 0) AS CodeLinesRemoved,

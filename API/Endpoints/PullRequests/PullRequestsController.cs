@@ -16,11 +16,13 @@ namespace API.Endpoints.PullRequests
     public class PullRequestsController : ControllerBase
     {
         private readonly string _connectionString;
+        private readonly string _reportingTimezone;
         private const int DefaultPageSize = 25;
 
         public PullRequestsController(IConfiguration config)
         {
             _connectionString = config.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("DefaultConnection connection string not found.");
+            _reportingTimezone = config["Application:ReportingTimezone"] ?? "UTC";
         }
 
         [HttpGet("{repoSlug}")]
@@ -44,9 +46,14 @@ namespace API.Endpoints.PullRequests
                 totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
                 // Query paginated PRs with author, repo, workspace, and approval info
-                var sqlAll = @"
+                var sqlAll = $@"
                     SELECT 
-                        pr.Id, pr.BitbucketPrId, pr.Title, pr.State, pr.CreatedOn, pr.UpdatedOn, pr.MergedOn, pr.ClosedOn, pr.IsRevert,
+                        pr.Id, pr.BitbucketPrId, pr.Title, pr.State, 
+                        CAST(pr.CreatedOn AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS CreatedOn,
+                        CAST(pr.UpdatedOn AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS UpdatedOn,
+                        CAST(pr.MergedOn AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS MergedOn,
+                        CAST(pr.ClosedOn AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS ClosedOn,
+                        pr.IsRevert,
                         u.DisplayName AS AuthorName, r.Name AS RepositoryName, r.Slug AS RepositorySlug, r.Workspace,
                         pa.DisplayName, pa.Role, pa.Approved, pa.ApprovedOn -- Approval details
                     FROM PullRequests pr
@@ -96,9 +103,14 @@ namespace API.Endpoints.PullRequests
                 totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
                 // Query paginated PRs with author info, repo slug, workspace, and approval info
-                var sql = @"
+                var sql = $@"
                     SELECT 
-                        pr.Id, pr.BitbucketPrId, pr.Title, pr.State, pr.CreatedOn, pr.UpdatedOn, pr.MergedOn, pr.ClosedOn, pr.IsRevert,
+                        pr.Id, pr.BitbucketPrId, pr.Title, pr.State, 
+                        CAST(pr.CreatedOn AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS CreatedOn,
+                        CAST(pr.UpdatedOn AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS UpdatedOn,
+                        CAST(pr.MergedOn AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS MergedOn,
+                        CAST(pr.ClosedOn AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}' AS DATETIME) AS ClosedOn,
+                        pr.IsRevert,
                         u.DisplayName AS AuthorName, r.Name AS RepositoryName, r.Slug AS RepositorySlug, r.Workspace,
                         pa.DisplayName, pa.Role, pa.Approved, pa.ApprovedOn -- Approval details
                     FROM PullRequests pr

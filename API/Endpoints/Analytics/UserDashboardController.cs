@@ -235,6 +235,34 @@ namespace API.Endpoints.Analytics
                 $"SELECT COUNT(*) FROM PullRequests pr JOIN Repositories r ON pr.RepositoryId = r.Id {mergedPrWhereClause}",
                 new { periodStartDate, periodEndDate, repoSlug, workspace });
 
+            // Calculate line metrics
+            var excludeCondition = showExcluded ? "" : " AND cf.ExcludeFromReporting = 0";
+            
+            // Total lines added/removed
+            var totalLinesSql = $@"
+                SELECT 
+                    ISNULL(SUM(c.LinesAdded), 0) AS TotalLinesAdded,
+                    ISNULL(SUM(c.LinesRemoved), 0) AS TotalLinesRemoved
+                FROM Commits c
+                JOIN Repositories r ON c.RepositoryId = r.Id
+                {whereClause}";
+            
+            var totalLines = await connection.QuerySingleOrDefaultAsync<(int TotalLinesAdded, int TotalLinesRemoved)>(
+                totalLinesSql, new { periodStartDate, periodEndDate, repoSlug, workspace, userId, teamId });
+            
+            // Code lines added/removed
+            var codeLinesSql = $@"
+                SELECT 
+                    ISNULL(SUM(cf.LinesAdded), 0) AS CodeLinesAdded,
+                    ISNULL(SUM(cf.LinesRemoved), 0) AS CodeLinesRemoved
+                FROM Commits c
+                JOIN Repositories r ON c.RepositoryId = r.Id
+                LEFT JOIN CommitFiles cf ON c.Id = cf.CommitId AND cf.FileType = 'code' {excludeCondition}
+                {whereClause}";
+            
+            var codeLines = await connection.QuerySingleOrDefaultAsync<(int CodeLinesAdded, int CodeLinesRemoved)>(
+                codeLinesSql, new { periodStartDate, periodEndDate, repoSlug, workspace, userId, teamId });
+
             return new PeriodStats
             {
                 StartDate = periodStartDate,
@@ -244,7 +272,11 @@ namespace API.Endpoints.Analytics
                 ActiveContributingUsers = activeContributingUsers,
                 TotalLicensedUsers = totalLicensedUsers, 
                 PrsNotApprovedAndMerged = prsNotApprovedAndMerged,
-                TotalMergedPrs = totalMergedPrs
+                TotalMergedPrs = totalMergedPrs,
+                TotalLinesAdded = totalLines.TotalLinesAdded,
+                TotalLinesRemoved = totalLines.TotalLinesRemoved,
+                CodeLinesAdded = codeLines.CodeLinesAdded,
+                CodeLinesRemoved = codeLines.CodeLinesRemoved
             };
         }
 
