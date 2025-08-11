@@ -52,6 +52,145 @@ namespace API.Endpoints.Auth
             return Ok(new { Exists = true, user.Username, HashLen = user.PasswordHash?.Length, SaltLen = user.PasswordSalt?.Length, user.IsActive });
         }
 
+        /// <summary>
+        /// Check if this is the first run (no users exist)
+        /// </summary>
+        [HttpGet("check-first-run")]
+        public async Task<IActionResult> CheckFirstRun()
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            var userCount = await conn.QuerySingleAsync<int>("SELECT COUNT(*) FROM AuthUsers");
+            return Ok(new { isFirstRun = userCount == 0 });
+        }
+
+        /// <summary>
+        /// Create the initial admin user (only works when no users exist)
+        /// </summary>
+        [HttpPost("setup-admin")]
+        public async Task<IActionResult> SetupAdmin([FromBody] SetupAdminRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
+            {
+                return BadRequest("Username and password are required");
+            }
+
+            // Validate password strength
+            if (req.Password.Length < 8)
+            {
+                return BadRequest("Password must be at least 8 characters long");
+            }
+
+            if (!req.Password.Any(char.IsUpper) || !req.Password.Any(char.IsLower) || 
+                !req.Password.Any(char.IsDigit) || !req.Password.Any(c => !char.IsLetterOrDigit(c)))
+            {
+                return BadRequest("Password must contain uppercase, lowercase, digit, and special character");
+            }
+
+            await using var conn = new SqlConnection(_connectionString);
+            
+            // Check if any users exist - this endpoint only works for first user
+            var userCount = await conn.QuerySingleAsync<int>("SELECT COUNT(*) FROM AuthUsers");
+            if (userCount > 0)
+            {
+                return BadRequest("Initial setup already completed. Users already exist in the system.");
+            }
+
+            // Check if username already exists (safety check)
+            var existingUser = await conn.QuerySingleOrDefaultAsync<int?>(
+                "SELECT Id FROM AuthUsers WHERE Username = @username",
+                new { username = req.Username });
+            
+            if (existingUser.HasValue)
+            {
+                return BadRequest("Username already exists");
+            }
+
+            // Generate salt and hash
+            var salt = new byte[32];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(salt);
+            }
+
+            var passwordBytes = Encoding.UTF8.GetBytes(req.Password);
+            var combined = new byte[passwordBytes.Length + salt.Length];
+            Buffer.BlockCopy(passwordBytes, 0, combined, 0, passwordBytes.Length);
+            Buffer.BlockCopy(salt, 0, combined, passwordBytes.Length, salt.Length);
+
+            byte[] hash;
+            using (var sha = System.Security.Cryptography.SHA512.Create())
+            {
+                hash = sha.ComputeHash(combined);
+            }
+
+            await conn.OpenAsync();
+            using var transaction = conn.BeginTransaction();
+            
+            try
+            {
+                // Create the user
+                var userId = await conn.QuerySingleAsync<int>(@"
+                    INSERT INTO AuthUsers (Username, PasswordHash, PasswordSalt, DisplayName, IsActive, CreatedOn, ModifiedOn)
+                    VALUES (@Username, @PasswordHash, @PasswordSalt, @DisplayName, 1, GETUTCDATE(), GETUTCDATE());
+                    SELECT SCOPE_IDENTITY();",
+                    new
+                    {
+                        Username = req.Username,
+                        PasswordHash = hash,
+                        PasswordSalt = salt,
+                        DisplayName = req.DisplayName ?? req.Username
+                    },
+                    transaction);
+
+                // Get Admin role ID (create if doesn't exist)
+                var adminRoleId = await conn.QuerySingleOrDefaultAsync<int?>(@"
+                    SELECT Id FROM AuthRoles WHERE Name = 'Admin'",
+                    transaction: transaction);
+
+                if (!adminRoleId.HasValue)
+                {
+                    adminRoleId = await conn.QuerySingleAsync<int>(@"
+                        INSERT INTO AuthRoles (Name, Description)
+                        VALUES ('Admin', 'Full system administrator access');
+                        SELECT SCOPE_IDENTITY();",
+                        transaction: transaction);
+                }
+
+                // Assign Admin role to the user
+                await conn.ExecuteAsync(@"
+                    INSERT INTO AuthUserRoles (UserId, RoleId)
+                    VALUES (@UserId, @RoleId)",
+                    new { UserId = userId, RoleId = adminRoleId.Value },
+                    transaction);
+
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Initial admin user created: {Username}", req.Username);
+
+                // Auto-login the admin user
+                var token = GenerateJwtToken(req.Username, req.DisplayName ?? req.Username, new[] { "Admin" });
+                return Ok(new LoginResponse 
+                { 
+                    Token = token, 
+                    DisplayName = req.DisplayName ?? req.Username, 
+                    Roles = new[] { "Admin" } 
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Failed to create initial admin user");
+                return StatusCode(500, "Failed to create admin user");
+            }
+        }
+
+        public class SetupAdminRequest
+        {
+            public string Username { get; set; } = string.Empty;
+            public string Password { get; set; } = string.Empty;
+            public string? DisplayName { get; set; }
+        }
+
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest req)
         {

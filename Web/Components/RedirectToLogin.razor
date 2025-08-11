@@ -1,13 +1,36 @@
 @inject NavigationManager Nav
+@inject HttpClient Http
+@using System.Net.Http.Json
 
 @code {
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        // Simply redirect to login - this component should only be rendered when not authorized
+        // Check if this is first run
+        try
+        {
+            var response = await Http.GetFromJsonAsync<FirstRunResponse>("api/auth/check-first-run");
+            if (response?.IsFirstRun == true)
+            {
+                // Redirect to setup page for first-time setup
+                Nav.NavigateTo("/setup", forceLoad: false);
+                return;
+            }
+        }
+        catch
+        {
+            // If there's an error, proceed to login
+        }
+
+        // Normal flow - redirect to login
         if (!Nav.Uri.EndsWith("/login", StringComparison.OrdinalIgnoreCase))
         {
             Nav.NavigateTo("/login", forceLoad: false);
         }
+    }
+
+    private class FirstRunResponse
+    {
+        public bool IsFirstRun { get; set; }
     }
 }
 

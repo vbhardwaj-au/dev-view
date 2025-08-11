@@ -2,8 +2,10 @@
 @page "/login"
 @using Web.Services
 @using System.ComponentModel.DataAnnotations
+@using System.Net.Http.Json
 @inject AuthService Auth
-@inject NavigationManager Nav
+@inject NavigationManager Navigation
+@inject HttpClient Http
 @inject ILogger<Login> Logger
 @rendermode InteractiveServer
 
@@ -37,9 +39,30 @@
     private string? error;
     private bool busy;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         Logger.LogInformation("Login page initialized");
+        
+        // Check if this is first run and redirect to setup if needed
+        try
+        {
+            var response = await Http.GetFromJsonAsync<FirstRunResponse>("api/auth/check-first-run");
+            if (response?.IsFirstRun == true)
+            {
+                Logger.LogInformation("First run detected, redirecting to setup");
+                Navigation.NavigateTo("/setup");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error checking first run status");
+            // Continue with login page if check fails
+        }
+    }
+    
+    private class FirstRunResponse
+    {
+        public bool IsFirstRun { get; set; }
     }
 
     private async Task HandleLogin()
@@ -71,7 +94,7 @@
                 await Task.Delay(200);
                 StateHasChanged();
                 Logger.LogInformation("Navigating to /dashboard");
-                Nav.NavigateTo("/dashboard", forceLoad: false);
+                Navigation.NavigateTo("/dashboard", forceLoad: false);
             }
             else
             {

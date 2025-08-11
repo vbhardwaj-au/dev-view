@@ -1,6 +1,9 @@
 @using Microsoft.AspNetCore.Components.Authorization
+@using System.Net.Http.Json
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IJSRuntime JS
+@inject HttpClient Http
+@inject NavigationManager Navigation
 
 <CascadingAuthenticationState>
     <Router AppAssembly="typeof(Program).Assembly">
@@ -17,8 +20,14 @@
                     </div>
                 </Authorizing>
                 <NotAuthorized>
-                    @if (routeData.PageType?.FullName?.Contains("Login") == true)
+                    @if (routeData.PageType?.FullName?.Contains("Setup") == true)
                     {
+                        <!-- Allow access to Setup page without authentication -->
+                        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+                    }
+                    else if (routeData.PageType?.FullName?.Contains("Login") == true)
+                    {
+                        <!-- Allow access to Login page without authentication -->
                         <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
                     }
                     else if (context?.User?.Identity?.IsAuthenticated == false)
@@ -40,4 +49,30 @@
 </CascadingAuthenticationState>
 
 @code {
+    protected override async Task OnInitializedAsync()
+    {
+        // Check if this is first run and redirect to setup if needed
+        try
+        {
+            var currentPath = Navigation.Uri;
+            // Don't check if already on setup page
+            if (!currentPath.Contains("/setup"))
+            {
+                var response = await Http.GetFromJsonAsync<FirstRunResponse>("api/auth/check-first-run");
+                if (response?.IsFirstRun == true)
+                {
+                    Navigation.NavigateTo("/setup");
+                }
+            }
+        }
+        catch
+        {
+            // If there's an error checking first run, let normal auth flow handle it
+        }
+    }
+
+    private class FirstRunResponse
+    {
+        public bool IsFirstRun { get; set; }
+    }
 }

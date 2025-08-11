@@ -126,6 +126,37 @@ namespace Web.Services
             return false;
         }
 
+        /// <summary>
+        /// Direct login with a token (used after setup or registration)
+        /// </summary>
+        public async Task Login(string token, string displayName, string[] roles)
+        {
+            Token = token;
+            DisplayName = displayName;
+            Roles = roles ?? Array.Empty<string>();
+            BearerHandler.Token = Token;
+            
+            Console.WriteLine($"[AuthService] Direct login. DisplayName: {DisplayName}, Roles: {string.Join(", ", Roles)}");
+            
+            // Save token to localStorage via JavaScript
+            try
+            {
+                await _jsRuntime.InvokeVoidAsync("authHelper.saveToken", Token);
+                Console.WriteLine("[AuthService] Token saved to localStorage");
+            }
+            catch (Exception jsEx)
+            {
+                Console.WriteLine($"[AuthService] Failed to save token to localStorage: {jsEx.Message}");
+            }
+            
+            // Update the authentication state provider
+            if (_authStateProvider is JwtAuthStateProvider jwt)
+            {
+                await jwt.SetUserAsync(DisplayName, Roles, Token);
+                Console.WriteLine("[AuthService] Authentication state updated");
+            }
+        }
+
         public async Task LogoutAsync()
         {
             Token = null;
