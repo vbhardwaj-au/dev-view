@@ -12,6 +12,7 @@ using Entities.DTOs.Teams;
 using Integration.Common;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,11 +24,13 @@ namespace API.Services
     {
         private readonly string _connectionString;
         private readonly ILogger<AnalyticsService> _logger;
+        private readonly string _reportingTimezone;
 
-        public AnalyticsService(BitbucketConfig config, ILogger<AnalyticsService> logger)
+        public AnalyticsService(BitbucketConfig config, ILogger<AnalyticsService> logger, IConfiguration configuration)
         {
             _connectionString = config.DbConnectionString;
             _logger = logger;
+            _reportingTimezone = configuration["Application:ReportingTimezone"] ?? "UTC";
         }
 
         /// <summary>
@@ -214,10 +217,13 @@ namespace API.Services
         public async Task<List<CommitPunchcardDto>> GetCommitPunchcardAsync(string? workspace = null, string? repoSlug = null, DateTime? startDate = null, DateTime? endDate = null, int? userId = null, int? teamId = null)
         {
             using var connection = new SqlConnection(_connectionString);
-            var sql = @"
+            
+            // Use AT TIME ZONE for timezone conversion
+            // Note: SQL Server requires the UTC specification before converting to target timezone
+            var sql = $@"
                 SELECT
-                    DATEPART(WEEKDAY, [Date]) - 1 AS DayOfWeek,
-                    DATEPART(HOUR, [Date]) AS HourOfDay,
+                    DATEPART(WEEKDAY, [Date] AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}') - 1 AS DayOfWeek,
+                    DATEPART(HOUR, [Date] AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}') AS HourOfDay,
                     COUNT(*) AS CommitCount
                 FROM Commits c
                 INNER JOIN Repositories r ON c.RepositoryId = r.Id
@@ -229,9 +235,12 @@ namespace API.Services
                   AND (@teamId IS NULL OR @teamId <= 0 OR c.AuthorId IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId))
                   AND c.IsRevert = 0
                   AND r.ExcludeFromReporting = 0
-                GROUP BY DATEPART(WEEKDAY, [Date]) - 1, DATEPART(HOUR, [Date])
+                GROUP BY DATEPART(WEEKDAY, [Date] AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}') - 1, 
+                         DATEPART(HOUR, [Date] AT TIME ZONE 'UTC' AT TIME ZONE '{_reportingTimezone}')
                 ORDER BY DayOfWeek, HourOfDay;";
 
+            _logger.LogInformation("Using timezone '{Timezone}' for punchcard report", _reportingTimezone);
+            
             var punchcard = await connection.QueryAsync<CommitPunchcardDto>(sql, new { workspace, repoSlug, startDate, endDate, userId, teamId });
             return punchcard.ToList();
         }
