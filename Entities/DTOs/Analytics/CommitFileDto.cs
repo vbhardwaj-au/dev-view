@@ -28,6 +28,6 @@ namespace Entities.DTOs.Analytics
     {
         public int FileId { get; set; }
         public string PropertyName { get; set; } = string.Empty;
-        public bool Value { get; set; }
+        public object? Value { get; set; }
     }
 } 

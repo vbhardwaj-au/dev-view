@@ -883,10 +883,22 @@ namespace API.Services
             using var connection = new SqlConnection(_connectionString);
 
             // Basic validation to prevent SQL injection for property name
-            var allowedProperties = new List<string> { "ExcludeFromReporting" }; // Add other properties as needed
+            var allowedProperties = new List<string> { "ExcludeFromReporting", "FileType" };
             if (!allowedProperties.Contains(updateDto.PropertyName))
             {
                 throw new ArgumentException($"Invalid property name: {updateDto.PropertyName}");
+            }
+            
+            // Validate FileType values
+            if (updateDto.PropertyName == "FileType")
+            {
+                var allowedFileTypes = new List<string> { "code", "data", "config", "docs", "other" };
+                var fileTypeValue = updateDto.Value?.ToString()?.ToLower();
+                if (string.IsNullOrEmpty(fileTypeValue) || !allowedFileTypes.Contains(fileTypeValue))
+                {
+                    throw new ArgumentException($"Invalid file type: {fileTypeValue}. Allowed values: {string.Join(", ", allowedFileTypes)}");
+                }
+                updateDto.Value = fileTypeValue;
             }
 
             var sql = $"UPDATE CommitFiles SET {updateDto.PropertyName} = @Value WHERE Id = @FileId;";

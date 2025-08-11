@@ -95,9 +95,16 @@
                                         <tr>
                                             <td>@file.FilePath</td>
                                             <td>
-                                                <span class="badge @GetFileTypeBadgeClass(file.FileType)">
-                                                    @file.FileType
-                                                </span>
+                                                <select class="form-select form-select-sm file-type-select @GetFileTypeSelectClass(file.FileType)" 
+                                                        style="width: 100px;"
+                                                        value="@file.FileType"
+                                                        @onchange="(e) => OnFileTypeChange(file, e.Value?.ToString() ?? string.Empty)">
+                                                    <option value="code">code</option>
+                                                    <option value="data">data</option>
+                                                    <option value="config">config</option>
+                                                    <option value="docs">docs</option>
+                                                    <option value="other">other</option>
+                                                </select>
                                             </td>
                                             <td>
                                                 @if (file.LinesAdded > 0)
@@ -153,6 +160,43 @@
     .sort-active {
         background-color: rgba(13, 110, 253, 0.1);
         color: #0d6efd;
+    }
+    
+    .file-type-select {
+        font-size: 0.875rem;
+        font-weight: 500;
+        border-radius: 0.25rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .file-type-code {
+        background-color: #0d6efd;
+        color: white;
+        border-color: #0d6efd;
+    }
+    
+    .file-type-data {
+        background-color: #0dcaf0;
+        color: white;
+        border-color: #0dcaf0;
+    }
+    
+    .file-type-config {
+        background-color: #ffc107;
+        color: #000;
+        border-color: #ffc107;
+    }
+    
+    .file-type-docs {
+        background-color: #198754;
+        color: white;
+        border-color: #198754;
+    }
+    
+    .file-type-other {
+        background-color: #6c757d;
+        color: white;
+        border-color: #6c757d;
     }
 </style>
 
@@ -264,6 +308,18 @@
         };
     }
 
+    private string GetFileTypeSelectClass(string fileType)
+    {
+        return fileType?.ToLower() switch
+        {
+            "code" => "file-type-code",
+            "data" => "file-type-data",
+            "config" => "file-type-config",
+            "docs" => "file-type-docs",
+            _ => "file-type-other"
+        };
+    }
+
     private async Task OnExcludeFromReportingChange(CommitFileDto file, bool value)
     {
         try
@@ -292,6 +348,43 @@
             Console.WriteLine($"Error updating ExcludeFromReporting for file {file.FilePath}: {ex.Message}");
             // Revert the UI state if the update fails
             file.ExcludeFromReporting = !value;
+        }
+    }
+
+    private async Task OnFileTypeChange(CommitFileDto file, string newFileType)
+    {
+        if (string.IsNullOrEmpty(newFileType) || file.FileType == newFileType)
+            return;
+
+        var oldFileType = file.FileType;
+        
+        try
+        {
+            var updateDto = new CommitFileUpdateDto
+            {
+                FileId = file.Id,
+                PropertyName = "FileType",
+                Value = newFileType
+            };
+
+            var response = await Http.PutAsJsonAsync("api/Analytics/commit-files", updateDto);
+            response.EnsureSuccessStatusCode();
+
+            // Update the local model
+            file.FileType = newFileType;
+
+            ShowAlert = true;
+            StateHasChanged();
+            await Task.Delay(5000);
+            ShowAlert = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating FileType for file {file.FilePath}: {ex.Message}");
+            // Revert the UI state if the update fails
+            file.FileType = oldFileType;
+            StateHasChanged();
         }
     }
 

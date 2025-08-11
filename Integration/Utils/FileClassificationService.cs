@@ -165,6 +165,13 @@ namespace Integration.Utils
             var extension = Path.GetExtension(filePath);
             var normalizedPath = NormalizePath(filePath);
 
+            // Log classification details for debugging
+            if (_config.EnableLogging && (extension?.ToLower() == ".csv" || extension?.ToUpper() == ".CSV"))
+            {
+                _logger.LogInformation("Classifying CSV file: Path='{FilePath}', Extension='{Extension}', CaseSensitive={CaseSensitive}", 
+                    filePath, extension, _config.CaseSensitive);
+            }
+
             // Apply classification rules in priority order
             foreach (var rule in _config.Priority)
             {
@@ -242,11 +249,22 @@ namespace Integration.Utils
         {
             if (string.IsNullOrEmpty(extension)) return null;
 
+            // Enhanced logging for CSV files
+            if (_config.EnableLogging && (extension.ToLower() == ".csv" || extension.ToUpper() == ".CSV"))
+            {
+                _logger.LogInformation("CheckExtensions for CSV: Extension='{Extension}', Available data extensions: {DataExtensions}", 
+                    extension, string.Join(", ", _config.Extensions.GetValueOrDefault("data", new List<string>())));
+            }
+
             foreach (var kvp in _config.Extensions)
             {
                 var comparison = _config.CaseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
                 if (kvp.Value.Any(ext => string.Equals(extension, ext, comparison)))
                 {
+                    if (_config.EnableLogging && (extension.ToLower() == ".csv" || extension.ToUpper() == ".CSV"))
+                    {
+                        _logger.LogInformation("CSV matched as {FileType} (comparison: {Comparison})", kvp.Key, comparison);
+                    }
                     return _fileTypeMapping.GetValueOrDefault(kvp.Key, FileType.Other);
                 }
             }

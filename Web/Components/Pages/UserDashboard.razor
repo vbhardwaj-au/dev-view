@@ -624,6 +624,11 @@
     private string? errorMessage;
     private DateTime? startDate;
     private DateTime? endDate;
+    
+    // Applied dates (dates that were actually used in the last search)
+    private DateTime? appliedStartDate;
+    private DateTime? appliedEndDate;
+    
     private bool _chartsRendered = false;
 
     // Filter-related state variables
@@ -650,6 +655,10 @@
         // Set end date to end of today (23:59:59) to include all commits from today
         endDate = DateTime.Today.AddDays(1).AddSeconds(-1);
         startDate = DateTime.Today.AddDays(-7);
+        
+        // Initialize applied dates with the same values
+        appliedEndDate = endDate;
+        appliedStartDate = startDate;
 
         // Parse query parameters to restore filters when navigating back (this can override defaults)
         ParseQueryParameters();
@@ -694,6 +703,7 @@
         if (queryParams.TryGetValue("startDate", out var startDateStr) && DateTime.TryParse(startDateStr, out var startDateParsed))
         {
             startDate = startDateParsed;
+            appliedStartDate = startDateParsed; // Also set applied date when parsing from URL
         }
 
         if (queryParams.TryGetValue("endDate", out var endDateStr) && DateTime.TryParse(endDateStr, out var endDateParsed))
@@ -702,10 +712,12 @@
             if (endDateParsed.TimeOfDay == TimeSpan.Zero)
             {
                 endDate = endDateParsed.Date.AddDays(1).AddSeconds(-1);
+                appliedEndDate = endDateParsed.Date.AddDays(1).AddSeconds(-1);
             }
             else
             {
                 endDate = endDateParsed;
+                appliedEndDate = endDateParsed;
             }
         }
 
@@ -725,6 +737,10 @@
         isLoading = true;
         errorMessage = null;
         _chartsRendered = false;
+        
+        // Update applied dates when search is performed
+        appliedStartDate = startDate;
+        appliedEndDate = endDate;
 
         try
         {
@@ -1016,35 +1032,36 @@
 
     private string GetDateRangeDisplay()
     {
+        // Use applied dates instead of filter dates
         // If both dates are null, it means "All Time" is selected
-        if (!startDate.HasValue && !endDate.HasValue)
+        if (!appliedStartDate.HasValue && !appliedEndDate.HasValue)
         {
             return "All Time";
         }
         
         // If only start date is provided
-        if (startDate.HasValue && !endDate.HasValue)
+        if (appliedStartDate.HasValue && !appliedEndDate.HasValue)
         {
-            return $"From {startDate.Value:MMM dd, yyyy}";
+            return $"From {appliedStartDate.Value:MMM dd, yyyy}";
         }
         
         // If only end date is provided
-        if (!startDate.HasValue && endDate.HasValue)
+        if (!appliedStartDate.HasValue && appliedEndDate.HasValue)
         {
-            return $"Until {endDate.Value:MMM dd, yyyy}";
+            return $"Until {appliedEndDate.Value:MMM dd, yyyy}";
         }
         
         // If both dates are provided
-        if (startDate.HasValue && endDate.HasValue)
+        if (appliedStartDate.HasValue && appliedEndDate.HasValue)
         {
             // If same year, show shorter format
-            if (startDate.Value.Year == endDate.Value.Year)
+            if (appliedStartDate.Value.Year == appliedEndDate.Value.Year)
             {
-                return $"{startDate.Value:MMM dd} - {endDate.Value:MMM dd, yyyy}";
+                return $"{appliedStartDate.Value:MMM dd} - {appliedEndDate.Value:MMM dd, yyyy}";
             }
             else
             {
-                return $"{startDate.Value:MMM dd, yyyy} - {endDate.Value:MMM dd, yyyy}";
+                return $"{appliedStartDate.Value:MMM dd, yyyy} - {appliedEndDate.Value:MMM dd, yyyy}";
             }
         }
         
