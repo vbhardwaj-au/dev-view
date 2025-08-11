@@ -9,8 +9,26 @@ namespace Integration.Commits
         [JsonPropertyName("hash")]
         public string Hash { get; set; }
 
+        private DateTime _date;
+        
         [JsonPropertyName("date")]
-        public DateTime Date { get; set; }
+        public DateTime Date 
+        { 
+            get => _date;
+            set 
+            {
+                // Ensure the date is always stored as UTC
+                // If the DateTime has Unspecified kind, it means timezone info was lost
+                // If it's Local, convert to UTC
+                // If it's already UTC, keep as is
+                _date = value.Kind switch
+                {
+                    DateTimeKind.Local => value.ToUniversalTime(),
+                    DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                    _ => value // Already UTC
+                };
+            }
+        }
 
         [JsonPropertyName("message")]
         public string Message { get; set; }

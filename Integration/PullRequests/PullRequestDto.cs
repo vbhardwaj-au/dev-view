@@ -20,14 +20,68 @@ namespace Integration.PullRequests
         [JsonPropertyName("author")]
         public PRAuthorDto Author { get; set; }
 
+        private DateTime _createdOn;
+        private DateTime? _updatedOn;
+        private DateTime? _closedOn;
+
         [JsonPropertyName("created_on")]
-        public DateTime CreatedOn { get; set; }
+        public DateTime CreatedOn 
+        { 
+            get => _createdOn;
+            set 
+            {
+                _createdOn = value.Kind switch
+                {
+                    DateTimeKind.Local => value.ToUniversalTime(),
+                    DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                    _ => value // Already UTC
+                };
+            }
+        }
 
         [JsonPropertyName("updated_on")]
-        public DateTime? UpdatedOn { get; set; }
+        public DateTime? UpdatedOn 
+        { 
+            get => _updatedOn;
+            set 
+            {
+                if (value.HasValue)
+                {
+                    _updatedOn = value.Value.Kind switch
+                    {
+                        DateTimeKind.Local => value.Value.ToUniversalTime(),
+                        DateTimeKind.Unspecified => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc),
+                        _ => value.Value // Already UTC
+                    };
+                }
+                else
+                {
+                    _updatedOn = null;
+                }
+            }
+        }
 
         [JsonPropertyName("closed_on")]
-        public DateTime? ClosedOn { get; set; }
+        public DateTime? ClosedOn 
+        { 
+            get => _closedOn;
+            set 
+            {
+                if (value.HasValue)
+                {
+                    _closedOn = value.Value.Kind switch
+                    {
+                        DateTimeKind.Local => value.Value.ToUniversalTime(),
+                        DateTimeKind.Unspecified => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc),
+                        _ => value.Value // Already UTC
+                    };
+                }
+                else
+                {
+                    _closedOn = null;
+                }
+            }
+        }
 
         [JsonPropertyName("merge_commit")]
         public CommitDto MergeCommit { get; set; }
