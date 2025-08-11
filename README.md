@@ -10,28 +10,30 @@ DevView is a comprehensive .NET 9 solution for analyzing Bitbucket repositories 
 
 ### 📊 Analytics & Dashboards
 - **Main Dashboard**: Organization-wide analytics with commit trends and contributor activity
-- **User Dashboard**: Individual developer metrics, commit patterns, and productivity insights
+- **User Dashboard**: Individual developer metrics, commit patterns, and productivity insights with new KPIs (Net Lines, Code Lines Added/Removed)
 - **Team Analytics**: Team-based performance metrics and collaboration patterns
 - **Top Committers**: Leaderboard showing most active contributors with detailed statistics
 - **PR Dashboard**: Pull request analytics including merge times, review patterns, and bottlenecks
 - **Commit Punchcard**: Visual heatmap showing when commits are made (day/hour patterns)
 
 ### 📈 Data Visualization
-- **Interactive Charts**: Multi-dataset area charts using Chart.js
+- **Interactive Charts**: Multi-dataset area charts using Chart.js with synchronized data between graphs and tables
 - **Contributor Activity**: GitHub-style contribution graphs for individuals and teams
 - **File Type Analysis**: Breakdown of changes by file types (code, data, config)
 - **Date Range Filtering**: Flexible date selection with quick presets (7, 30, 90 days, all time)
-- **Repository Filtering**: Analyze specific repositories or all repositories
+- **Repository Filtering**: Analyze specific repositories or all repositories with workspace-aware filtering
 - **Real-time Updates**: Live chart updates when changing filters
+- **Timezone Support**: Configurable timezone display (AEST/Sydney time by default)
 
 ### 🔐 Authentication & Security
-- **JWT Authentication**: Secure token-based authentication system
+- **JWT Authentication**: Secure token-based authentication system with extended token duration
 - **Role-Based Access Control**: Three-tier role system:
-  - **Admin**: Full system access, user management, all settings
+  - **Admin**: Full system access, user management, all settings, can modify file classifications
   - **Manager**: Team management, elevated analytics access
-  - **User**: Standard access to dashboards and personal analytics
+  - **User**: Standard access to dashboards and personal analytics, read-only file classification
 - **Password Management**: Secure password hashing with salt
 - **Session Management**: Automatic token refresh and logout
+- **Windows AD Integration**: Ready for Active Directory integration (configurable)
 
 ### 🔄 Data Synchronization
 - **AutoSync Service**: Background service for automated data synchronization
@@ -43,12 +45,14 @@ DevView is a comprehensive .NET 9 solution for analyzing Bitbucket repositories 
 - **Rate Limiting**: Respects Bitbucket API rate limits
 
 ### 🎯 Advanced Features
-- **Exclude Flags**: Mark users/repositories to exclude from reports
-- **Team Management**: Create and manage development teams
-- **Commit File Analysis**: Detailed view of files changed in each commit
+- **Exclude Flags**: Mark users/repositories to exclude from reports with proper filtering across all views
+- **Team Management**: Create and manage development teams with improved member display (shows only top 5)
+- **Commit File Analysis**: Detailed view of files changed in each commit with role-based editing
 - **PR Age Analysis**: Identify long-running pull requests
-- **Code Classification**: Automatic categorization of file changes
+- **Code Classification**: Automatic categorization of file changes with admin-only modification
 - **Export Capabilities**: Export data for external analysis
+- **Improved Navigation**: Reorganized menu with collapsible Dashboard group
+- **Enhanced Filtering**: Consistent data filtering between graphs and tables
 
 ## 🏗️ Architecture
 
@@ -358,6 +362,8 @@ DevView includes sophisticated date handling to ensure accurate data analysis:
 - **Inclusive End Dates**: When selecting an end date, the system includes the entire day (up to 23:59:59)
 - **Smart Date Adjustment**: Automatically adjusts dates for API calls to prevent data loss
 - **Quick Date Ranges**: Preset options for common analysis periods
+- **Timezone Configuration**: Configurable reporting timezone (default: AUS Eastern Standard Time)
+- **SQL-based Conversion**: All timezone conversions handled at database level for consistency
 
 ### Team Management
 - Create custom teams to group developers
@@ -405,7 +411,16 @@ Automatically categorizes file changes into:
     "Key": "your-very-long-secret-key-minimum-32-chars",
     "Issuer": "devview-api",
     "Audience": "devview-api",
-    "ExpirationDays": 7
+    "ExpirationDays": 30
+  }
+}
+```
+
+### Application Settings
+```json
+{
+  "Application": {
+    "ReportingTimezone": "AUS Eastern Standard Time"
   }
 }
 ```
@@ -448,6 +463,12 @@ Automatically categorizes file changes into:
 - Verify AutoSync is running: Check logs in `/logs` directory
 - Ensure Bitbucket credentials are correct
 - Check date range filters include data
+- Verify workspace is selected in Settings
+
+**"Graph and table data don't match"**
+- Ensure both are using the same filters (repository, user/team, date range)
+- Check that excluded repositories are being filtered consistently
+- Verify workspace parameter is being passed for "all repositories" queries
 
 **"Login fails with correct credentials"**
 - Verify JWT configuration in both API and Web projects
@@ -458,6 +479,25 @@ Automatically categorizes file changes into:
 - Check Bitbucket API credentials
 - Verify SQL connection in AutoSync/appsettings.json
 - Review AutoSync logs for rate limiting messages
+
+**"Build warnings in projects"**
+- All CS1998, CS8601, CS8605 warnings have been fixed
+- Run `dotnet build` to verify 0 warnings
+
+## 🚀 Recent Updates
+
+### Version 2.0 (Latest)
+- ✅ Fixed data synchronization between graphs and tables
+- ✅ Added workspace filtering for "all repositories" views
+- ✅ Implemented timezone support (AEST/Sydney time)
+- ✅ Enhanced UserDashboard with new KPIs (Net Lines, Code Lines Added/Removed)
+- ✅ Fixed role-based access control for file classification editing
+- ✅ Reorganized navigation menu with collapsible Dashboard group
+- ✅ Fixed "Top 5 Team Members" to show exactly 5 members
+- ✅ Resolved all build warnings (CS1998, CS8601, CS8605)
+- ✅ Added team filtering support to commits API
+- ✅ Improved JWT token duration to 30 days
+- ✅ Enhanced filter consistency across all views
 
 ## 🤝 Contributing
 
@@ -474,6 +514,7 @@ We welcome contributions! Please follow these steps:
 - Add unit tests for new features
 - Update documentation for API changes
 - Ensure all tests pass before submitting PR
+- Maintain 0 build warnings policy
 
 ## 📄 License
 
