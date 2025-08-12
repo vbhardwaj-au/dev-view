@@ -1,5 +1,6 @@
 @inject NavigationManager Nav
 @inject HttpClient Http
+@inject ILogger<RedirectToLogin> Logger
 @using System.Net.Http.Json
 
 @code {
@@ -16,13 +17,16 @@
                 return;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Error checking first run status");
             // If there's an error, proceed to login
         }
 
         // Normal flow - redirect to login
-        if (!Nav.Uri.EndsWith("/login", StringComparison.OrdinalIgnoreCase))
+        var currentUri = Nav.Uri;
+        
+        if (!currentUri.EndsWith("/login", StringComparison.OrdinalIgnoreCase))
         {
             Nav.NavigateTo("/login", forceLoad: false);
         }

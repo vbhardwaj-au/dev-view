@@ -14,22 +14,19 @@
     <nav class="nav flex-column">
         <AuthorizeView>
             <Authorized>
-                <div class="nav-item px-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div class="text-light small">
-                            <i class="bi bi-person-circle"></i> @context.User.Identity?.Name
-                        </div>
-                        <button class="btn btn-sm btn-outline-light btn-sm py-0 px-2" @onclick="HandleLogout" style="font-size: 0.8rem;">
-                            <i class="bi bi-box-arrow-right"></i> Logout
-                        </button>
+                <div class="nav-item px-2">
+                    <div class="user-info">
+                        <i class="bi bi-person-circle"></i>
+                        <span class="user-name">@context.User.Identity?.Name</span>
                     </div>
                 </div>
-                <hr class="text-light my-2" />
+                <hr class="text-light my-1" />
             </Authorized>
             <NotAuthorized>
-                <div class="nav-item px-3">
+                <div class="nav-item px-2">
                     <NavLink class="nav-link" href="login">
-                        <span class="bi bi-box-arrow-in-right" aria-hidden="true"></span> Login
+                        <i class="bi bi-box-arrow-in-right"></i>
+                        <span>Login</span>
                     </NavLink>
                 </div>
             </NotAuthorized>
@@ -39,53 +36,61 @@
         <AuthorizeView>
             <Authorized>
                 <!-- Dashboard Group -->
-                <div class="nav-item px-3">
+                <div class="nav-item px-2">
                     <div class="nav-link dropdown-toggle" data-bs-toggle="collapse" data-bs-target="#dashboardSubmenu" aria-expanded="true" aria-controls="dashboardSubmenu" style="cursor: pointer;">
-                        <span class="bi bi-speedometer2" aria-hidden="true"></span> Dashboard
+                        <i class="bi bi-speedometer2"></i>
+                        <span>Dashboard</span>
                     </div>
                     <div class="collapse show" id="dashboardSubmenu">
-                        <div class="nav-item ps-4">
+                        <div class="nav-item ps-3">
                             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                                <span class="bi bi-house-door" aria-hidden="true"></span> Main
+                                <i class="bi bi-house-door"></i>
+                                <span>Main</span>
                             </NavLink>
                         </div>
-                        <div class="nav-item ps-4">
+                        <div class="nav-item ps-3">
                             <NavLink class="nav-link" href="user-dashboard">
-                                <span class="bi bi-git" aria-hidden="true"></span> Commits
+                                <i class="bi bi-git"></i>
+                                <span>Commits</span>
                             </NavLink>
                         </div>
-                        <div class="nav-item ps-4">
+                        <div class="nav-item ps-3">
                             <NavLink class="nav-link" href="pr-dashboard">
-                                <span class="bi bi-diagram-2" aria-hidden="true"></span> PR
+                                <i class="bi bi-diagram-2"></i>
+                                <span>PR</span>
                             </NavLink>
                         </div>
                     </div>
                 </div>
 
-                <hr class="text-light my-2" />
+                <hr class="text-light my-1" />
 
                 <!-- Data Views Section -->
-                <div class="nav-item px-3">
+                <div class="nav-item px-2">
                     <NavLink class="nav-link" href="commits">
-                        <span class="bi bi-git" aria-hidden="true"></span> Commits
+                        <i class="bi bi-git"></i>
+                        <span>Commits</span>
                     </NavLink>
                 </div>
 
-                <div class="nav-item px-3">
+                <div class="nav-item px-2">
                     <NavLink class="nav-link" href="pull-requests">
-                        <span class="bi bi-diagram-2" aria-hidden="true"></span> Pull Requests
+                        <i class="bi bi-diagram-2"></i>
+                        <span>Pull Requests</span>
                     </NavLink>
                 </div>
 
-                <div class="nav-item px-3">
+                <div class="nav-item px-2">
                     <NavLink class="nav-link" href="top-committers">
-                        <span class="bi bi-trophy" aria-hidden="true"></span> Top Committers
+                        <i class="bi bi-trophy"></i>
+                        <span>Top Committers</span>
                     </NavLink>
                 </div>
 
-                <div class="nav-item px-3">
+                <div class="nav-item px-2">
                     <NavLink class="nav-link" href="teams">
-                        <span class="bi bi-people-fill" aria-hidden="true"></span> Teams
+                        <i class="bi bi-people-fill"></i>
+                        <span>Teams</span>
                     </NavLink>
                 </div>
             </Authorized>
@@ -94,37 +99,57 @@
         <!-- Admin Section - Only visible to Admin role -->
         <AuthorizeView Roles="Admin">
             <Authorized>
-                <div class="nav-item px-3">
+                <div class="nav-item px-2">
                     <div class="nav-link dropdown-toggle" data-bs-toggle="collapse" data-bs-target="#adminSubmenu" aria-expanded="false" aria-controls="adminSubmenu" style="cursor: pointer;">
-                        <span class="bi bi-gear-fill" aria-hidden="true"></span> Admin
+                        <i class="bi bi-gear-fill"></i>
+                        <span>Admin</span>
                     </div>
                     <div class="collapse" id="adminSubmenu">
-                        <div class="nav-item ps-4">
+                        <div class="nav-item ps-3">
                             <NavLink class="nav-link" href="admin/repositories">
-                                <span class="bi bi-folder-fill" aria-hidden="true"></span> Repositories
+                                <i class="bi bi-folder-fill"></i>
+                                <span>Repositories</span>
                             </NavLink>
                         </div>
-                        <div class="nav-item ps-4">
+                        <div class="nav-item ps-3">
                             <NavLink class="nav-link" href="admin/users">
-                                <span class="bi bi-people-fill" aria-hidden="true"></span> Bitbucket Users
+                                <i class="bi bi-people-fill"></i>
+                                <span>Bitbucket Users</span>
                             </NavLink>
                         </div>
-                        <div class="nav-item ps-4">
+                        <div class="nav-item ps-3">
                             <NavLink class="nav-link" href="admin/user-management">
-                                <span class="bi bi-person-gear" aria-hidden="true"></span> User Management
+                                <i class="bi bi-person-gear"></i>
+                                <span>User Management</span>
                             </NavLink>
                         </div>
-                        <div class="nav-item ps-4">
+                        <div class="nav-item ps-3">
                             <NavLink class="nav-link" href="admin/roles">
-                                <span class="bi bi-shield-lock" aria-hidden="true"></span> Roles
+                                <i class="bi bi-shield-lock"></i>
+                                <span>Roles</span>
                             </NavLink>
                         </div>
-                        <div class="nav-item ps-4">
+                        <div class="nav-item ps-3">
                             <NavLink class="nav-link" href="admin/settings">
-                                <span class="bi bi-sliders" aria-hidden="true"></span> Settings
+                                <i class="bi bi-sliders"></i>
+                                <span>Settings</span>
                             </NavLink>
                         </div>
                     </div>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+
+        <!-- Logout button at the bottom -->
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-spacer"></div>
+                <hr class="text-light my-1" />
+                <div class="nav-item px-2">
+                    <button class="nav-link logout-btn" @onclick="HandleLogout">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>Logout</span>
+                    </button>
                 </div>
             </Authorized>
         </AuthorizeView>

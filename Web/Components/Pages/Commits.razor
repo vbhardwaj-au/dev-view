@@ -346,6 +346,12 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Try to auto-select workspace if none is selected
+        if (!WorkspaceService.HasSelectedWorkspace)
+        {
+            await WorkspaceService.TryAutoSelectWorkspaceAsync();
+        }
+
         // Parse query parameters from URL
         ParseQueryParameters();
         

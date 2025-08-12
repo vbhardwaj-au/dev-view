@@ -12,6 +12,7 @@ namespace Web.Services
         private readonly ILogger<JwtAuthStateProvider> _logger;
         private ClaimsPrincipal _anonymous = new(new ClaimsIdentity());
         private AuthenticationState? _cachedAuthState;
+        private bool _isInitialized = false;
         
         public JwtAuthStateProvider(IJSRuntime jsRuntime, ILogger<JwtAuthStateProvider> logger)
         {
@@ -21,8 +22,8 @@ namespace Web.Services
 
         public override async Task<AuthenticationState> GetAuthenticationStateAsync()
         {
-            // Return cached state if available
-            if (_cachedAuthState != null)
+            // Return cached state if available and initialized
+            if (_cachedAuthState != null && _isInitialized)
             {
                 return _cachedAuthState;
             }
@@ -30,20 +31,22 @@ namespace Web.Services
             try
             {
                 // Try to get token from localStorage with timeout
-                var token = await _jsRuntime.InvokeAsync<string>("authHelper.getToken", TimeSpan.FromSeconds(10));
+                var token = await _jsRuntime.InvokeAsync<string>("authHelper.getToken", TimeSpan.FromSeconds(2));
                 
                 if (string.IsNullOrEmpty(token))
                 {
-                    _logger.LogInformation("No token found in localStorage");
                     _cachedAuthState = new AuthenticationState(_anonymous);
+                    _isInitialized = true;
                     return _cachedAuthState;
                 }
                 
                 var (name, roles) = ParseJwtToken(token);
+                
                 if (string.IsNullOrEmpty(name))
                 {
                     _logger.LogWarning("Invalid or expired token found");
                     _cachedAuthState = new AuthenticationState(_anonymous);
+                    _isInitialized = true;
                     return _cachedAuthState;
                 }
                 
@@ -65,62 +68,35 @@ namespace Web.Services
                 
                 _logger.LogInformation($"Authentication restored for user: {name}");
                 _cachedAuthState = new AuthenticationState(user);
+                _isInitialized = true;
                 return _cachedAuthState;
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("JavaScript interop"))
             {
-                // This happens during prerendering - wait and retry
-                _logger.LogDebug("JS interop not available, waiting...");
-                await Task.Delay(100);
-                
-                try
-                {
-                    var token = await _jsRuntime.InvokeAsync<string>("authHelper.getToken", TimeSpan.FromSeconds(5));
-                    if (!string.IsNullOrEmpty(token))
-                    {
-                        var (name, roles) = ParseJwtToken(token);
-                        if (!string.IsNullOrEmpty(name))
-                        {
-                            var claims = new List<Claim> { new Claim(ClaimTypes.Name, name) };
-                            foreach (var r in roles)
-                            {
-                                claims.Add(new Claim(ClaimTypes.Role, r));
-                            }
-                            
-                            var identity = new ClaimsIdentity(claims, "JwtAuth");
-                            var user = new ClaimsPrincipal(identity);
-                            BearerHandler.Token = token;
-                            
-                            _logger.LogInformation($"Authentication restored for user: {name} (after retry)");
-                            _cachedAuthState = new AuthenticationState(user);
-                            return _cachedAuthState;
-                        }
-                    }
-                }
-                catch
-                {
-                    // Still not available
-                }
-                
-                _cachedAuthState = new AuthenticationState(_anonymous);
-                return _cachedAuthState;
+                // This happens during prerendering - return anonymous state but don't cache it yet
+                return new AuthenticationState(_anonymous);
             }
             catch (TaskCanceledException)
             {
                 _logger.LogWarning("Timeout while getting authentication token");
                 _cachedAuthState = new AuthenticationState(_anonymous);
+                _isInitialized = true;
                 return _cachedAuthState;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting authentication state");
                 _cachedAuthState = new AuthenticationState(_anonymous);
+                _isInitialized = true;
                 return _cachedAuthState;
             }
         }
 
         public async Task SetUserAsync(string name, string[] roles, string token)
         {
+            _logger.LogInformation("SetUserAsync called for user: {Name} with roles: {Roles}", 
+                name, string.Join(", ", roles));
+            
             // Store token in localStorage
             await _jsRuntime.InvokeVoidAsync("authHelper.saveToken", token);
             
@@ -129,6 +105,7 @@ namespace Web.Services
             
             // Clear cached state
             _cachedAuthState = null;
+            _isInitialized = false;
             
             // Notify that auth state has changed
             NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
@@ -136,6 +113,8 @@ namespace Web.Services
 
         public async Task ClearAsync()
         {
+            _logger.LogInformation("ClearAsync called");
+            
             try
             {
                 await _jsRuntime.InvokeVoidAsync("authHelper.removeToken");
@@ -146,6 +125,7 @@ namespace Web.Services
             
             // Set cached state to anonymous
             _cachedAuthState = new AuthenticationState(_anonymous);
+            _isInitialized = true;
             
             // Notify that auth state has changed
             NotifyAuthenticationStateChanged(Task.FromResult(_cachedAuthState));
@@ -157,7 +137,10 @@ namespace Web.Services
             {
                 var parts = token.Split('.');
                 if (parts.Length != 3)
+                {
+                    _logger.LogWarning("Invalid JWT token format - expected 3 parts, got {Parts}", parts.Length);
                     return ("", Array.Empty<string>());
+                }
 
                 var payload = parts[1];
                 var jsonBytes = ParseBase64WithoutPadding(payload);
@@ -171,7 +154,9 @@ namespace Web.Services
                 {
                     var exp = expElement.GetInt64();
                     var expDate = DateTimeOffset.FromUnixTimeSeconds(exp);
-                    if (expDate < DateTimeOffset.UtcNow)
+                    var now = DateTimeOffset.UtcNow;
+                    
+                    if (expDate < now)
                     {
                         _logger.LogInformation("Token is expired");
                         return ("", Array.Empty<string>());

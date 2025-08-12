@@ -373,6 +373,7 @@
     {
         <h3 class="mb-4">Usage Statistics</h3>
         <div class="row">
+            <!-- Row 1: Active Contributing Users, Total Commits, Repositories Updated -->
             <!-- Active Contributing Users -->
             <div class="col-lg-4 col-md-6 mb-4">
                 <div class="card shadow-sm kpi-card">
@@ -456,71 +457,10 @@
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- PRs Not Approved and Merged -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">PRs Not Approved and Merged</h5>
-                            <i class="bi bi-x-circle-fill text-danger fs-4"></i>
-                        </div>
-                        <h2 class="fw-bold mb-3">
-                            <span class="text-danger">@dashboardData.CurrentPeriod.PrsNotApprovedAndMerged</span>
-                        </h2>
-                        <p class="text-muted small mb-0">Current Period</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Users Count with No Activity -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Users with No Activity</h5>
-                            <i class="bi bi-person-slash-fill text-warning fs-4"></i>
-                        </div>
-                        <h2 class="fw-bold mb-3">
-                            <span class="text-warning">@dashboardData.UsersWithNoActivity</span>
-                        </h2>
-                        <p class="text-muted small mb-0">Current Period</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- PRs Merged by Weekday Chart -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="row align-items-center">
-                            <div class="col-6">
-                                <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-2">PRs Merged</h5>
-                                <h2 class="fw-bold mb-1">@dashboardData.CurrentPeriod.TotalMergedPrs</h2>
-                                @{
-                                    var prChange = (double)dashboardData.CurrentPeriod.TotalMergedPrs - dashboardData.PreviousPeriod.TotalMergedPrs;
-                                    var prPercentageChange = dashboardData.PreviousPeriod.TotalMergedPrs > 0
-                                        ? (prChange / dashboardData.PreviousPeriod.TotalMergedPrs) * 100
-                                        : (dashboardData.CurrentPeriod.TotalMergedPrs > 0 ? 100.0 : 0.0);
-                                    var prChangeClass = prPercentageChange >= 0 ? "text-success" : "text-danger";
-                                }
-                                <p class="small mb-0 @prChangeClass">
-                                    <span>@prChange.ToString("+#;-#;0")</span>
-                                    (@prPercentageChange.ToString("F1")%)
-                                </p>
-                            </div>
-                            <div class="col-6">
-                                <div class="flex-grow-1" style="height: 120px;">
-                                    <canvas id="prsMergedByWeekdayChart" class="w-100 h-100"></canvas>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
+        <!-- Row 2: Net Code Lines, Code Lines Added, Code Lines Removed -->
+        <div class="row">
             <!-- Net Code Lines (Added - Removed) -->
             <div class="col-lg-4 col-md-6 mb-4">
                 <div class="card shadow-sm kpi-card">
@@ -594,6 +534,73 @@
                         </h2>
                         <p class="text-muted small mb-0">Last period: @((dashboardData.PreviousPeriod.CodeLinesRemoved ?? 0).ToString("#,##0"))</p>
                         <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 3: PRs Not Approved and Merged, Users with No Activity, PRs Merged -->
+        <div class="row">
+            <!-- PRs Not Approved and Merged -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm kpi-card">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">PRs Not Approved and Merged</h5>
+                            <i class="bi bi-x-circle-fill text-danger fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            <span class="text-danger">@dashboardData.CurrentPeriod.PrsNotApprovedAndMerged</span>
+                        </h2>
+                        <p class="text-muted small mb-0">Current Period</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Count with No Activity -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm kpi-card">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Users with No Activity</h5>
+                            <i class="bi bi-person-slash-fill text-warning fs-4"></i>
+                        </div>
+                        <h2 class="fw-bold mb-3">
+                            <span class="text-warning">@dashboardData.UsersWithNoActivity</span>
+                        </h2>
+                        <p class="text-muted small mb-0">Current Period</p>
+                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PRs Merged by Weekday Chart -->
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card shadow-sm kpi-card">
+                    <div class="card-body d-flex flex-column">
+                        <div class="row align-items-center">
+                            <div class="col-6">
+                                <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-2">PRs Merged</h5>
+                                <h2 class="fw-bold mb-1">@dashboardData.CurrentPeriod.TotalMergedPrs</h2>
+                                @{
+                                    var prChange = (double)dashboardData.CurrentPeriod.TotalMergedPrs - dashboardData.PreviousPeriod.TotalMergedPrs;
+                                    var prPercentageChange = dashboardData.PreviousPeriod.TotalMergedPrs > 0
+                                        ? (prChange / dashboardData.PreviousPeriod.TotalMergedPrs) * 100
+                                        : (dashboardData.CurrentPeriod.TotalMergedPrs > 0 ? 100.0 : 0.0);
+                                    var prChangeClass = prPercentageChange >= 0 ? "text-success" : "text-danger";
+                                }
+                                <p class="small mb-0 @prChangeClass">
+                                    <span>@prChange.ToString("+#;-#;0")</span>
+                                    (@prPercentageChange.ToString("F1")%)
+                                </p>
+                            </div>
+                            <div class="col-6">
+                                <div class="flex-grow-1" style="height: 120px;">
+                                    <canvas id="prsMergedByWeekdayChart" class="w-100 h-100"></canvas>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -766,6 +773,13 @@
         // Parse query parameters to restore filters when navigating back (this can override defaults)
         ParseQueryParameters();
 
+        // Try to auto-select workspace if none is selected
+        if (!WorkspaceService.HasSelectedWorkspace)
+        {
+            await WorkspaceService.TryAutoSelectWorkspaceAsync();
+        }
+
+        // Check again after auto-selection attempt
         if (!WorkspaceService.HasSelectedWorkspace)
         {
             return;

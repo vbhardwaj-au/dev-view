@@ -262,7 +262,13 @@
 
         try
         {
-            // Instead of redirecting, just show a message if no workspace is selected
+            // Try to auto-select workspace if none is selected
+            if (!WorkspaceService.HasSelectedWorkspace)
+            {
+                await WorkspaceService.TryAutoSelectWorkspaceAsync();
+            }
+
+            // Check again after auto-selection attempt
             if (!WorkspaceService.HasSelectedWorkspace)
             {
                 errorMessage = "No workspace selected. Please configure workspace in Settings first.";

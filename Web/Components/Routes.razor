@@ -4,6 +4,8 @@
 @inject IJSRuntime JS
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject ILogger<Routes> Logger
+@inject AuthenticationStateProvider AuthStateProvider
 
 <CascadingAuthenticationState>
     <Router AppAssembly="typeof(Program).Assembly">
@@ -30,7 +32,7 @@
                         <!-- Allow access to Login page without authentication -->
                         <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
                     }
-                    else if (context?.User?.Identity?.IsAuthenticated == false)
+                    else
                     {
                         <LayoutView Layout="typeof(Layout.MainLayout)">
                             <RedirectToLogin />
@@ -55,6 +57,7 @@
         try
         {
             var currentPath = Navigation.Uri;
+            
             // Don't check if already on setup page
             if (!currentPath.Contains("/setup"))
             {
@@ -65,8 +68,9 @@
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Error checking first run status");
             // If there's an error checking first run, let normal auth flow handle it
         }
     }
