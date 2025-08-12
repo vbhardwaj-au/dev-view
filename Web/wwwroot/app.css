@@ -24,6 +24,21 @@ h1:focus {
     outline: none;
 }
 
+/* Page title styling */
+h1 {
+    color: #495057;
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #e9ecef;
+}
+
+h1 i {
+    color: #6c757d;
+    margin-right: 0.5rem;
+}
+
 .valid.modified:not([type=checkbox]) {
     outline: 1px solid #26b050;
 }
