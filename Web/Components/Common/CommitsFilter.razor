@@ -167,14 +167,7 @@
                     </div>
                 </div>
                 
-                @if (DisableIndividualFilter)
-                {
-                    <div class="alert alert-warning alert-sm">
-                        <i class="bi bi-exclamation-triangle me-1"></i>
-                        Individual filter disabled - no users found
-                    </div>
-                }
-                else if (FilterType == "user")
+                @if (FilterType == "user")
                 {
                     @if (IsLoadingUsers)
                     {
@@ -498,10 +491,10 @@
 
     private void HandleFilterTypeChanged(string filterType)
     {
-        // Prevent switching to user filter if it's disabled
+        // If trying to switch to user filter but it's disabled, switch to team instead
         if (filterType == "user" && DisableIndividualFilter)
         {
-            return;
+            filterType = "team";
         }
         
         FilterType = filterType;
