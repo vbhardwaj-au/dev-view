@@ -9,6 +9,7 @@
 @using System.Linq
 @using Microsoft.AspNetCore.WebUtilities
 @using Entities.DTOs.Teams
+@using Entities.DTOs.Analytics
 
 <style>
     .filter-container {
@@ -371,242 +372,311 @@
     }
     else if (dashboardData != null)
     {
-        <h3 class="mb-4">Usage Statistics</h3>
-        <div class="row">
-            <!-- Row 1: Active Contributing Users, Total Commits, Repositories Updated -->
+        <h3 class="kpi-section-header">
+            <i class="bi bi-graph-up"></i>
+            Usage Statistics
+        </h3>
+        
+        <div class="kpi-grid kpi-grid-3">
             <!-- Active Contributing Users -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-3">Active Contributing Users</h5>
-                            <i class="bi bi-people-fill fs-3 text-primary"></i>
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">Active Contributing Users</h5>
+                        <div class="kpi-icon primary">
+                            <i class="bi bi-people-fill"></i>
                         </div>
-                        <h2 class="fw-bold mb-3">
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
                             @dashboardData.CurrentPeriod.ActiveContributingUsers
                             @{
                                 var userChange = (double)dashboardData.CurrentPeriod.ActiveContributingUsers - dashboardData.PreviousPeriod.ActiveContributingUsers;
                                 var userPercentageChange = dashboardData.PreviousPeriod.ActiveContributingUsers > 0
                                     ? (userChange / dashboardData.PreviousPeriod.ActiveContributingUsers) * 100
                                     : 0;
-                                var userChangeClass = userPercentageChange >= 0 ? "text-success" : "text-danger";
+                                var userTrendClass = userPercentageChange >= 0 ? "positive" : "negative";
                                 var userChangeIcon = userPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
                             }
-                            <span class="small @userChangeClass">
-                                <i class="bi @userChangeIcon"></i> @userPercentageChange.ToString("F1")%
+                            <span class="kpi-trend @userTrendClass">
+                                <i class="bi @userChangeIcon"></i>
+                                @userPercentageChange.ToString("F1")%
                             </span>
-                        </h2>
-                        <p class="text-muted small mb-0">Last period: @dashboardData.PreviousPeriod.ActiveContributingUsers</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Last period: @dashboardData.PreviousPeriod.ActiveContributingUsers</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
 
             <!-- Total Commits -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Total Commits</h5>
-                            <i class="bi bi-git text-info fs-4"></i>
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">Total Commits</h5>
+                        <div class="kpi-icon info">
+                            <i class="bi bi-git"></i>
                         </div>
-                        <h2 class="fw-bold mb-3">
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
                             @dashboardData.CurrentPeriod.TotalCommits
                             @{
                                 var commitChange = (double)dashboardData.CurrentPeriod.TotalCommits - dashboardData.PreviousPeriod.TotalCommits;
                                 var commitPercentageChange = dashboardData.PreviousPeriod.TotalCommits > 0
                                     ? (commitChange / dashboardData.PreviousPeriod.TotalCommits) * 100
                                     : 0;
-                                var commitChangeClass = commitPercentageChange >= 0 ? "text-success" : "text-danger";
+                                var commitTrendClass = commitPercentageChange >= 0 ? "positive" : "negative";
                                 var commitChangeIcon = commitPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
                             }
-                            <span class="fs-6 @commitChangeClass">
-                                <i class="bi @commitChangeIcon"></i> @commitPercentageChange.ToString("0.0")%
+                            <span class="kpi-trend @commitTrendClass">
+                                <i class="bi @commitChangeIcon"></i>
+                                @commitPercentageChange.ToString("0.0")%
                             </span>
-                        </h2>
-                        <p class="text-muted small mb-0">Last period: @dashboardData.PreviousPeriod.TotalCommits</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Last period: @dashboardData.PreviousPeriod.TotalCommits</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
 
             <!-- Repositories Updated -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Repositories Updated</h5>
-                            <i class="bi bi-folder-fill text-warning fs-4"></i>
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">Repositories Updated</h5>
+                        <div class="kpi-icon warning">
+                            <i class="bi bi-folder-fill"></i>
                         </div>
-                        <h2 class="fw-bold mb-3">
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
                             @dashboardData.CurrentPeriod.RepositoriesUpdated
                             @{
                                 var repoChange = (double)dashboardData.CurrentPeriod.RepositoriesUpdated - dashboardData.PreviousPeriod.RepositoriesUpdated;
                                 var repoPercentageChange = dashboardData.PreviousPeriod.RepositoriesUpdated > 0
                                     ? (repoChange / dashboardData.PreviousPeriod.RepositoriesUpdated) * 100
                                     : 0;
-                                var repoChangeClass = repoPercentageChange >= 0 ? "text-success" : "text-danger";
+                                var repoTrendClass = repoPercentageChange >= 0 ? "positive" : "negative";
                                 var repoChangeIcon = repoPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
                             }
-                            <span class="fs-6 @repoChangeClass">
-                                <i class="bi @repoChangeIcon"></i> @repoPercentageChange.ToString("0.0")%
+                            <span class="kpi-trend @repoTrendClass">
+                                <i class="bi @repoChangeIcon"></i>
+                                @repoPercentageChange.ToString("0.0")%
                             </span>
-                        </h2>
-                        <p class="text-muted small mb-0">Last period: @dashboardData.PreviousPeriod.RepositoriesUpdated</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Last period: @dashboardData.PreviousPeriod.RepositoriesUpdated</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Row 2: Net Code Lines, Code Lines Added, Code Lines Removed -->
-        <div class="row">
-            <!-- Net Code Lines (Added - Removed) -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Net Code Lines</h5>
-                            <i class="bi bi-plus-slash-minus text-secondary fs-4"></i>
+        <div class="kpi-grid kpi-grid-3">
+            <!-- Net Code Lines -->
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">Net Code Lines</h5>
+                        <div class="kpi-icon secondary">
+                            <i class="bi bi-plus-slash-minus"></i>
                         </div>
-                        <h2 class="fw-bold mb-3">
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
                             @{
                                 var netCodeLines = (dashboardData.CurrentPeriod.CodeLinesAdded ?? 0) - (dashboardData.CurrentPeriod.CodeLinesRemoved ?? 0);
-                                var netCodeLinesClass = netCodeLines >= 0 ? "text-success" : "text-danger";
                             }
-                            <span class="@netCodeLinesClass">@netCodeLines.ToString("+#,##0;-#,##0;0")</span>
-                        </h2>
-                        <p class="text-muted small mb-0">Code Added - Code Removed</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                            @netCodeLines.ToString("+#,##0;-#,##0;0")
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Code Added - Code Removed</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
 
             <!-- Code Lines Added -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Code Lines Added</h5>
-                            <i class="bi bi-code-slash text-success fs-4"></i>
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">Code Lines Added</h5>
+                        <div class="kpi-icon success">
+                            <i class="bi bi-code-slash"></i>
                         </div>
-                        <h2 class="fw-bold mb-3">
-                            <span class="text-success">+@((dashboardData.CurrentPeriod.CodeLinesAdded ?? 0).ToString("#,##0"))</span>
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
+                            +@((dashboardData.CurrentPeriod.CodeLinesAdded ?? 0).ToString("#,##0"))
                             @{
                                 var codeAddedChange = (double)(dashboardData.CurrentPeriod.CodeLinesAdded ?? 0) - (dashboardData.PreviousPeriod.CodeLinesAdded ?? 0);
                                 var codeAddedPercentageChange = (dashboardData.PreviousPeriod.CodeLinesAdded ?? 0) > 0
                                     ? (codeAddedChange / (dashboardData.PreviousPeriod.CodeLinesAdded ?? 1)) * 100
                                     : 0;
-                                var codeAddedChangeClass = codeAddedPercentageChange >= 0 ? "text-success" : "text-danger";
+                                var codeAddedTrendClass = codeAddedPercentageChange >= 0 ? "positive" : "negative";
                                 var codeAddedChangeIcon = codeAddedPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
                             }
-                            <span class="fs-6 @codeAddedChangeClass">
-                                <i class="bi @codeAddedChangeIcon"></i> @codeAddedPercentageChange.ToString("0.0")%
+                            <span class="kpi-trend @codeAddedTrendClass">
+                                <i class="bi @codeAddedChangeIcon"></i>
+                                @codeAddedPercentageChange.ToString("0.0")%
                             </span>
-                        </h2>
-                        <p class="text-muted small mb-0">Last period: @((dashboardData.PreviousPeriod.CodeLinesAdded ?? 0).ToString("#,##0"))</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Last period: @((dashboardData.PreviousPeriod.CodeLinesAdded ?? 0).ToString("#,##0"))</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
 
             <!-- Code Lines Removed -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Code Lines Removed</h5>
-                            <i class="bi bi-dash-circle text-danger fs-4"></i>
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">Code Lines Removed</h5>
+                        <div class="kpi-icon danger">
+                            <i class="bi bi-dash-circle"></i>
                         </div>
-                        <h2 class="fw-bold mb-3">
-                            <span class="text-danger">-@((dashboardData.CurrentPeriod.CodeLinesRemoved ?? 0).ToString("#,##0"))</span>
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
+                            -@((dashboardData.CurrentPeriod.CodeLinesRemoved ?? 0).ToString("#,##0"))
                             @{
                                 var codeRemovedChange = (double)(dashboardData.CurrentPeriod.CodeLinesRemoved ?? 0) - (dashboardData.PreviousPeriod.CodeLinesRemoved ?? 0);
                                 var codeRemovedPercentageChange = (dashboardData.PreviousPeriod.CodeLinesRemoved ?? 0) > 0
                                     ? (codeRemovedChange / (dashboardData.PreviousPeriod.CodeLinesRemoved ?? 1)) * 100
                                     : 0;
-                                var codeRemovedChangeClass = codeRemovedPercentageChange >= 0 ? "text-warning" : "text-success";
+                                // For code lines removed, decrease is GOOD (positive), increase is BAD (negative)
+                                var codeRemovedTrendClass = codeRemovedPercentageChange >= 0 ? "negative" : "positive";
                                 var codeRemovedChangeIcon = codeRemovedPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
                             }
-                            <span class="fs-6 @codeRemovedChangeClass">
-                                <i class="bi @codeRemovedChangeIcon"></i> @codeRemovedPercentageChange.ToString("0.0")%
+                            <span class="kpi-trend @codeRemovedTrendClass">
+                                <i class="bi @codeRemovedChangeIcon"></i>
+                                @codeRemovedPercentageChange.ToString("0.0")%
                             </span>
-                        </h2>
-                        <p class="text-muted small mb-0">Last period: @((dashboardData.PreviousPeriod.CodeLinesRemoved ?? 0).ToString("#,##0"))</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Last period: @((dashboardData.PreviousPeriod.CodeLinesRemoved ?? 0).ToString("#,##0"))</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Row 3: PRs Not Approved and Merged, Users with No Activity, PRs Merged -->
-        <div class="row">
-            <!-- PRs Not Approved and Merged -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">PRs Not Approved and Merged</h5>
-                            <i class="bi bi-x-circle-fill text-danger fs-4"></i>
+        <div class="kpi-grid kpi-grid-3">
+            <!-- PRs Approved -->
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">PRs Approved</h5>
+                        <div class="kpi-icon success">
+                            <i class="bi bi-check-circle-fill"></i>
                         </div>
-                        <h2 class="fw-bold mb-3">
-                            <span class="text-danger">@dashboardData.CurrentPeriod.PrsNotApprovedAndMerged</span>
-                        </h2>
-                        <p class="text-muted small mb-0">Current Period</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
+                            @dashboardData.CurrentPeriod.PrsApproved
+                            @{
+                                var prsApprovedChange = (double)dashboardData.CurrentPeriod.PrsApproved - dashboardData.PreviousPeriod.PrsApproved;
+                                var prsApprovedPercentageChange = dashboardData.PreviousPeriod.PrsApproved > 0
+                                    ? (prsApprovedChange / dashboardData.PreviousPeriod.PrsApproved) * 100
+                                    : (dashboardData.CurrentPeriod.PrsApproved > 0 ? 100.0 : 0.0);
+                                var prsApprovedTrendClass = prsApprovedPercentageChange >= 0 ? "positive" : "negative";
+                                var prsApprovedChangeIcon = prsApprovedPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
+                            }
+                            <span class="kpi-trend @prsApprovedTrendClass">
+                                <i class="bi @prsApprovedChangeIcon"></i>
+                                @prsApprovedPercentageChange.ToString("0.0")%
+                            </span>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Last period: @dashboardData.PreviousPeriod.PrsApproved</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Users Count with No Activity -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-0">Users with No Activity</h5>
-                            <i class="bi bi-person-slash-fill text-warning fs-4"></i>
+            <!-- Users with No Activity -->
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">Users with No Activity</h5>
+                        <div class="kpi-icon warning">
+                            <i class="bi bi-person-slash-fill"></i>
                         </div>
-                        <h2 class="fw-bold mb-3">
-                            <span class="text-warning">@dashboardData.UsersWithNoActivity</span>
-                        </h2>
-                        <p class="text-muted small mb-0">Current Period</p>
-                        <p class="text-muted small mb-0">@GetDateRangeDisplay()</p>
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
+                            @dashboardData.UsersWithNoActivity
+                            @{
+                                var usersNoActivityChange = (double)dashboardData.UsersWithNoActivity - dashboardData.PreviousPeriodUsersWithNoActivity;
+                                var usersNoActivityPercentageChange = dashboardData.PreviousPeriodUsersWithNoActivity > 0
+                                    ? (usersNoActivityChange / dashboardData.PreviousPeriodUsersWithNoActivity) * 100
+                                    : (dashboardData.UsersWithNoActivity > 0 ? 100.0 : 0.0);
+                                // For users with no activity, decrease is GOOD (positive), increase is BAD (negative)
+                                var usersNoActivityTrendClass = usersNoActivityPercentageChange >= 0 ? "negative" : "positive";
+                                var usersNoActivityChangeIcon = usersNoActivityPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
+                            }
+                            <span class="kpi-trend @usersNoActivityTrendClass">
+                                <i class="bi @usersNoActivityChangeIcon"></i>
+                                @usersNoActivityPercentageChange.ToString("0.0")%
+                            </span>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Last period: @dashboardData.PreviousPeriodUsersWithNoActivity</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
 
-            <!-- PRs Merged by Weekday Chart -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card shadow-sm kpi-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="row align-items-center">
-                            <div class="col-6">
-                                <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-2">PRs Merged</h5>
-                                <h2 class="fw-bold mb-1">@dashboardData.CurrentPeriod.TotalMergedPrs</h2>
-                                @{
-                                    var prChange = (double)dashboardData.CurrentPeriod.TotalMergedPrs - dashboardData.PreviousPeriod.TotalMergedPrs;
-                                    var prPercentageChange = dashboardData.PreviousPeriod.TotalMergedPrs > 0
-                                        ? (prChange / dashboardData.PreviousPeriod.TotalMergedPrs) * 100
-                                        : (dashboardData.CurrentPeriod.TotalMergedPrs > 0 ? 100.0 : 0.0);
-                                    var prChangeClass = prPercentageChange >= 0 ? "text-success" : "text-danger";
-                                }
-                                <p class="small mb-0 @prChangeClass">
-                                    <span>@prChange.ToString("+#;-#;0")</span>
-                                    (@prPercentageChange.ToString("F1")%)
-                                </p>
-                            </div>
-                            <div class="col-6">
-                                <div class="flex-grow-1" style="height: 120px;">
-                                    <canvas id="prsMergedByWeekdayChart" class="w-100 h-100"></canvas>
-                                </div>
-                            </div>
+            <!-- PRs Merged -->
+            <div class="kpi-card">
+                <div class="card-body">
+                    <div class="kpi-header">
+                        <h5 class="kpi-title">PRs Merged</h5>
+                        <div class="kpi-icon primary">
+                            <i class="bi bi-git"></i>
                         </div>
+                    </div>
+                    <div class="kpi-value-section">
+                        <div class="kpi-main-value">
+                            @dashboardData.CurrentPeriod.TotalMergedPrs
+                            @{
+                                var prChange = (double)dashboardData.CurrentPeriod.TotalMergedPrs - dashboardData.PreviousPeriod.TotalMergedPrs;
+                                var prPercentageChange = dashboardData.PreviousPeriod.TotalMergedPrs > 0
+                                    ? (prChange / dashboardData.PreviousPeriod.TotalMergedPrs) * 100
+                                    : (dashboardData.CurrentPeriod.TotalMergedPrs > 0 ? 100.0 : 0.0);
+                                var prTrendClass = prPercentageChange >= 0 ? "positive" : "negative";
+                                var prChangeIcon = prPercentageChange >= 0 ? "bi-arrow-up" : "bi-arrow-down";
+                            }
+                            <span class="kpi-trend @prTrendClass">
+                                <i class="bi @prChangeIcon"></i>
+                                @prPercentageChange.ToString("0.0")%
+                            </span>
+                        </div>
+                    </div>
+                    <div class="kpi-footer">
+                        <p class="kpi-comparison">Last period: @dashboardData.PreviousPeriod.TotalMergedPrs</p>
+                        <p class="kpi-period">@GetDateRangeDisplay()</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <h3 class="mb-4 mt-4">Detailed Insights</h3>
+        <h3 class="kpi-section-header">
+            <i class="bi bi-bar-chart"></i>
+            Detailed Insights
+        </h3>
         <div class="row">
             <!-- PR Average Age Graph -->
             <div class="col-lg-6 mb-4">
@@ -663,23 +733,64 @@
                 <div class="card shadow-sm h-100">
                     <div class="card-body d-flex flex-column">
                         <h5 class="card-title text-muted text-uppercase fs-6 fw-bold mb-3">Biggest Contributor Users (Commits & Code Lines)</h5>
-                        <div class="table-responsive flex-grow-1">
+                        <div class="table-responsive flex-grow-1" style="max-height: 300px; overflow-y: auto;">
                             <table class="table table-striped table-hover table-sm mb-0">
-                                <thead class="table-light">
+                                <thead class="table-light sticky-top bg-light">
                                     <tr>
-                                        <th>User</th>
-                                        <th>Commits</th>
-                                        <th>Code Added</th>
-                                        <th>Code Removed</th>
+                                        <th style="position: sticky; top: 0; z-index: 1; background: inherit;">
+                                            <a href="javascript:void(0)" @onclick='() => SortContributors("user")' style="text-decoration: none; color: inherit;">
+                                                User
+                                                @if (contributorSortBy == "user")
+                                                {
+                                                    <i class="bi @(contributorSortDescending ? "bi-arrow-down" : "bi-arrow-up") ms-1"></i>
+                                                }
+                                            </a>
+                                        </th>
+                                        <th style="position: sticky; top: 0; z-index: 1; background: inherit;">
+                                            <a href="javascript:void(0)" @onclick='() => SortContributors("commits")' style="text-decoration: none; color: inherit;">
+                                                Commits
+                                                @if (contributorSortBy == "commits")
+                                                {
+                                                    <i class="bi @(contributorSortDescending ? "bi-arrow-down" : "bi-arrow-up") ms-1"></i>
+                                                }
+                                            </a>
+                                        </th>
+                                        <th style="position: sticky; top: 0; z-index: 1; background: inherit;">
+                                            <a href="javascript:void(0)" @onclick='() => SortContributors("added")' style="text-decoration: none; color: inherit;">
+                                                Code Added
+                                                @if (contributorSortBy == "added")
+                                                {
+                                                    <i class="bi @(contributorSortDescending ? "bi-arrow-down" : "bi-arrow-up") ms-1"></i>
+                                                }
+                                            </a>
+                                        </th>
+                                        <th style="position: sticky; top: 0; z-index: 1; background: inherit;">
+                                            <a href="javascript:void(0)" @onclick='() => SortContributors("removed")' style="text-decoration: none; color: inherit;">
+                                                Code Removed
+                                                @if (contributorSortBy == "removed")
+                                                {
+                                                    <i class="bi @(contributorSortDescending ? "bi-arrow-down" : "bi-arrow-up") ms-1"></i>
+                                                }
+                                            </a>
+                                        </th>
+                                        <th style="position: sticky; top: 0; z-index: 1; background: inherit;">
+                                            <a href="javascript:void(0)" @onclick='() => SortContributors("net")' style="text-decoration: none; color: inherit;">
+                                                Net
+                                                @if (contributorSortBy == "net")
+                                                {
+                                                    <i class="bi @(contributorSortDescending ? "bi-arrow-down" : "bi-arrow-up") ms-1"></i>
+                                                }
+                                            </a>
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var contributor in dashboardData.TopContributors)
+                                    @foreach (var contributor in GetSortedContributors())
                                     {
                                         <tr>
                                             <td>
                                                 <a href="javascript:void(0)" 
-                                                   @onclick="() => NavigateToUserCommits(contributor.UserName)"
+                                                   @onclick='() => NavigateToUserCommits(contributor.UserName)'
                                                    style="cursor:pointer; text-decoration:underline; color:var(--bs-link-color);">
                                                     @contributor.UserName
                                                 </a>
@@ -687,6 +798,9 @@
                                             <td>@contributor.Commits</td>
                                             <td class="text-success">+@contributor.CodeLinesAdded</td>
                                             <td class="text-danger">-@contributor.CodeLinesRemoved</td>
+                                            <td class="@(contributor.CodeLinesAdded - contributor.CodeLinesRemoved >= 0 ? "text-success" : "text-danger")">
+                                                @((contributor.CodeLinesAdded - contributor.CodeLinesRemoved).ToString("+#,##0;-#,##0;0"))
+                                            </td>
                                         </tr>
                                     }
                                 </tbody>
@@ -758,6 +872,10 @@
     // Punchcard data variables
     private List<CommitPunchcardDto>? punchcardData;
     private bool isLoadingPunchcard = false;
+
+    // Sorting variables for contributors table
+    private string contributorSortBy = "net";
+    private bool contributorSortDescending = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1267,5 +1385,61 @@
         }
 
         Navigation.NavigateTo(url);
+    }
+
+    private void SortContributors(string sortBy)
+    {
+        if (contributorSortBy == sortBy)
+        {
+            // Toggle direction if same column
+            contributorSortDescending = !contributorSortDescending;
+        }
+        else
+        {
+            // New column, set to descending by default
+            contributorSortBy = sortBy;
+            contributorSortDescending = true;
+        }
+        StateHasChanged();
+    }
+
+    private IEnumerable<ContributorStats> GetSortedContributors()
+    {
+        if (dashboardData?.TopContributors == null)
+            return Enumerable.Empty<ContributorStats>();
+
+        var query = dashboardData.TopContributors.AsQueryable();
+
+        switch (contributorSortBy)
+        {
+            case "user":
+                query = contributorSortDescending 
+                    ? query.OrderByDescending(c => c.UserName)
+                    : query.OrderBy(c => c.UserName);
+                break;
+            case "commits":
+                query = contributorSortDescending 
+                    ? query.OrderByDescending(c => c.Commits)
+                    : query.OrderBy(c => c.Commits);
+                break;
+            case "added":
+                query = contributorSortDescending 
+                    ? query.OrderByDescending(c => c.CodeLinesAdded)
+                    : query.OrderBy(c => c.CodeLinesAdded);
+                break;
+            case "removed":
+                query = contributorSortDescending 
+                    ? query.OrderByDescending(c => c.CodeLinesRemoved)
+                    : query.OrderBy(c => c.CodeLinesRemoved);
+                break;
+            case "net":
+            default:
+                query = contributorSortDescending 
+                    ? query.OrderByDescending(c => c.CodeLinesAdded - c.CodeLinesRemoved)
+                    : query.OrderBy(c => c.CodeLinesAdded - c.CodeLinesRemoved);
+                break;
+        }
+
+        return query.ToList();
     }
 } 

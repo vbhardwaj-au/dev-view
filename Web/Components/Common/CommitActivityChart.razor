@@ -184,7 +184,8 @@
                         tension: 0.4,
                         pointRadius: 5,
                         pointHoverRadius: 8,
-                        yAxisID: 'y'
+                        yAxisID: 'y',
+                        hidden: true
                     },
                     {
                         label: 'Total --',
@@ -195,7 +196,8 @@
                         tension: 0.4,
                         pointRadius: 5,
                         pointHoverRadius: 8,
-                        yAxisID: 'y'
+                        yAxisID: 'y',
+                        hidden: true
                     },
                     {
                         label: 'Code ++',
@@ -207,7 +209,7 @@
                         pointRadius: 3,
                         pointHoverRadius: 6,
                         yAxisID: 'y',
-                        hidden: true
+                        hidden: false
                     },
                     {
                         label: 'Code --',
@@ -219,7 +221,19 @@
                         pointRadius: 3,
                         pointHoverRadius: 6,
                         yAxisID: 'y',
-                        hidden: true
+                        hidden: false
+                    },
+                    {
+                        label: 'Net Code',
+                        data: codeAdded.map((added, index) => added - codeRemoved[index]),
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y',
+                        hidden: false
                     },
                     {
                         label: 'Data ++',
@@ -323,6 +337,9 @@
                                         return `🧑‍💻 Code ++: ${item.codeLinesAdded.toLocaleString()} lines`;
                                     case 'Code --':
                                         return `🧑‍💻 Code --: ${item.codeLinesRemoved.toLocaleString()} lines`;
+                                    case 'Net Code':
+                                        const netCode = item.codeLinesAdded - item.codeLinesRemoved;
+                                        return `📊 Net Code: ${netCode >= 0 ? '+' : ''}${netCode.toLocaleString()} lines`;
                                     case 'Data ++':
                                         return `🗄️ Data ++: ${item.dataLinesAdded.toLocaleString()} lines`;
                                     case 'Data --':

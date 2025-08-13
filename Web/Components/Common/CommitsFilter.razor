@@ -267,72 +267,79 @@
 </div>
 
 <!-- Advanced Filters -->
-<div class="filter-container">
-<div class="row mb-3 g-2">
-    <!-- Content Filters -->
-    <div class="col-md-8">
-        <div class="card filter-card border-warning border-opacity-25">
-            <div class="card-body p-2">
-                <h6 class="card-title text-warning mb-2">
-                    <i class="bi bi-funnel me-2"></i>Content Filters
-                </h6>
-                <div class="row g-3">
-                    <div class="col-lg-3 col-md-6">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="includePR" @bind="IncludePR" @bind:after="OnFilterChanged">
-                            <label class="form-check-label fw-medium" for="includePR">
-                                <i class="bi bi-git me-1"></i>Include PRs
-                            </label>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="includeData" @bind="IncludeData" @bind:after="OnFilterChanged">
-                            <label class="form-check-label fw-medium" for="includeData">
-                                <i class="bi bi-database me-1"></i>Data Files
-                            </label>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="includeConfig" @bind="IncludeConfig" @bind:after="OnFilterChanged">
-                            <label class="form-check-label fw-medium" for="includeConfig">
-                                <i class="bi bi-gear me-1"></i>Config Files
-                            </label>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="showExcluded" @bind="ShowExcluded" @bind:after="HandleShowExcludedChanged">
-                            <label class="form-check-label fw-medium" for="showExcluded">
-                                <i class="bi bi-eye-slash me-1"></i>Show Excluded
-                            </label>
+@if (ShowContentFilters || ShowGrouping)
+{
+    <div class="filter-container">
+        <div class="row mb-3 g-2">
+            <!-- Content Filters -->
+            @if (ShowContentFilters)
+            {
+                <div class="@(ShowGrouping ? "col-md-8" : "col-md-12")">
+                    <div class="card filter-card border-warning border-opacity-25">
+                        <div class="card-body p-2">
+                            <h6 class="card-title text-warning mb-2">
+                                <i class="bi bi-funnel me-2"></i>Content Filters
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-lg-3 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="includePR" @bind="IncludePR" @bind:after="OnFilterChanged">
+                                        <label class="form-check-label fw-medium" for="includePR">
+                                            <i class="bi bi-git me-1"></i>Include PRs
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="includeData" @bind="IncludeData" @bind:after="OnFilterChanged">
+                                        <label class="form-check-label fw-medium" for="includeData">
+                                            <i class="bi bi-database me-1"></i>Data Files
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="includeConfig" @bind="IncludeConfig" @bind:after="OnFilterChanged">
+                                        <label class="form-check-label fw-medium" for="includeConfig">
+                                            <i class="bi bi-gear me-1"></i>Config Files
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="showExcluded" @bind="ShowExcluded" @bind:after="HandleShowExcludedChanged">
+                                        <label class="form-check-label fw-medium" for="showExcluded">
+                                            <i class="bi bi-eye-slash me-1"></i>Show Excluded
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            }
+
+            <!-- Grouping Options -->
+            @if (ShowGrouping)
+            {
+                <div class="@(ShowContentFilters ? "col-md-4" : "col-md-12")">
+                    <div class="card filter-card border-secondary border-opacity-25">
+                        <div class="card-body p-2">
+                            <h6 class="card-title text-secondary mb-2">
+                                <i class="bi bi-collection me-2"></i>Group By
+                            </h6>
+                            <select class="form-select" value="@GroupBy" @onchange="@((ChangeEventArgs e) => { GroupBy = e.Value?.ToString() ?? "Day"; })">
+                                <option value="Day">📅 Daily</option>
+                                <option value="Week">📊 Weekly</option>
+                                <option value="Month">📈 Monthly</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            }
         </div>
     </div>
-
-    <!-- Grouping Options -->
-    @if (ShowGrouping)
-    {
-        <div class="col-md-4">
-            <div class="card filter-card border-secondary border-opacity-25">
-                <div class="card-body p-2">
-                    <h6 class="card-title text-secondary mb-2">
-                        <i class="bi bi-collection me-2"></i>Group By
-                    </h6>
-                    <select class="form-select" value="@GroupBy" @onchange="@((ChangeEventArgs e) => { GroupBy = e.Value?.ToString() ?? "Day"; })">
-                        <option value="Day">📅 Daily</option>
-                        <option value="Week">📊 Weekly</option>
-                        <option value="Month">📈 Monthly</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-    }
-</div>
+}
 
 <!-- Search Button -->
 <div class="row">
@@ -348,7 +355,6 @@
             }
         </button>
     </div>
-</div>
 </div>
 
 @code {
@@ -420,6 +426,9 @@
 
     [Parameter]
     public bool ShowGrouping { get; set; } = true;
+
+    [Parameter]
+    public bool ShowContentFilters { get; set; } = true;
 
     [Parameter]
     public bool DisableIndividualFilter { get; set; } = false;

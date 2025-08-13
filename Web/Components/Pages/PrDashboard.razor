@@ -5,6 +5,8 @@
 @using Radzen
 @using Radzen.Blazor
 @using Web.Components.Common
+@using Entities.DTOs.Teams
+@using Entities.DTOs.Analytics
 
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
@@ -37,14 +39,32 @@
     }
     else
     {
-        <PRFilter 
+        <CommitsFilter 
             IsLoadingRepos="@isLoadingRepos"
             Repositories="@repositories"
             SelectedRepoSlug="@selectedRepoSlug"
+            IsLoadingUsers="@isLoadingUsers"
+            Users="@users"
+            SelectedUserId="@selectedUserId"
+            IsLoadingTeams="@isLoadingTeams"
+            Teams="@teams"
+            SelectedTeamId="@selectedTeamId"
+            FilterType="@filterType"
             StartDate="@startDate"
             EndDate="@endDate"
+            IncludePR="false"
+            IncludeData="false"
+            IncludeConfig="false"
+            ShowGrouping="false"
+            ShowContentFilters="false"
+            ShowExcluded="false"
             OnRepositorySelected="OnRepositorySelected"
-            OnDateRangeUpdated="OnDateRangeUpdated" />
+            OnUserSelected="OnUserSelected"
+            OnTeamSelected="OnTeamSelected"
+            OnFilterTypeChanged="OnFilterTypeChanged"
+            OnDateRangeUpdated="OnDateRangeUpdated"
+            OnFiltersChanged="OnFiltersChanged"
+            OnSearchButtonClicked="OnSearchButtonClicked" />
 
         @if (!string.IsNullOrEmpty(errorMessage))
         {
@@ -53,120 +73,379 @@
             </RadzenAlert>
         }
 
-        @if (isLoadingTopOpenPrs)
+        <!-- Row 1: Security & Compliance (Critical Alerts) -->
+        @if (isLoadingKpis)
         {
             <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter">
                 <div class="d-flex align-items-center">
                     <div class="spinner-border spinner-border-sm me-2" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
-                    <span>Loading top open PRs...</span>
+                    <span>Loading PR dashboard metrics...</span>
                 </div>
             </RadzenAlert>
         }
-        else if (topOpenPrs != null && topOpenPrs.Any())
+        else
         {
             <div class="row mb-4">
-                <div class="col-md-6">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Top 5 Projects by Open PRs</h5>
+                <div class="col-12">
+                    <h4 class="mb-3 text-danger"><i class="bi bi-shield-exclamation"></i> Security & Compliance</h4>
+                </div>
+            <!-- Position 1-1: PRs Merged Without Approval -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card alert-high">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title text-danger">PRs Merged Without Approval</h5>
+                            <i class="bi bi-shield-x-fill bi-icon icon-negative"></i>
                         </div>
-                        <div class="card-body">
-                            <RadzenDataGrid Data="@topOpenPrs" TItem="RepositorySummaryDto" AllowColumnResize="true">
-                                <Columns>
-                                    <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="Name" Title="Repository" />
-                                    <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="OpenPullRequestCount" Title="Open PRs" TextAlign="TextAlign.Center" />
-                                </Columns>
-                            </RadzenDataGrid>
+                        <div class="metric-value-container">
+                            <span class="value-negative">@(prsMergedWithoutApproval ?? 0)</span>
+                            <span class="percentage-change change-negative">
+                                @if (prsMergedWithoutApprovalPrevious.HasValue && prsMergedWithoutApproval.HasValue)
+                                {
+                                    var change = prsMergedWithoutApproval.Value - prsMergedWithoutApprovalPrevious.Value;
+                                    var icon = change > 0 ? "bi-arrow-up" : change < 0 ? "bi-arrow-down" : "bi-dash";
+                                    <i class="bi @icon"></i>@(change >= 0 ? "+" : "")@change
+                                }
+                            </span>
+                        </div>
+                        <div class="metric-details">
+                            <p class="period-info">Last period: @(prsMergedWithoutApprovalPrevious ?? 0)</p>
+                            <p class="period-info">@GetPeriodText()</p>
                         </div>
                     </div>
                 </div>
             </div>
-        }
-        else
-        {
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle me-2"></i>
-                No data for top open PRs found for the selected criteria.
+            <!-- Position 1-2: Repositories with Approval Bypasses -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card @(reposWithApprovalBypasses > 0 ? "alert-high" : "positive")">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title @(reposWithApprovalBypasses > 0 ? "text-danger" : "text-success")">Repositories with Bypasses</h5>
+                            <i class="bi @(reposWithApprovalBypasses > 0 ? "bi-building-exclamation" : "bi-building-check") bi-icon @(reposWithApprovalBypasses > 0 ? "icon-negative" : "icon-positive")"></i>
+                        </div>
+                        <div class="metric-value-container">
+                            <span class="@(reposWithApprovalBypasses > 0 ? "value-negative" : "value-positive")">@(reposWithApprovalBypasses ?? 0)</span>
+                            <span class="percentage-change @(reposWithApprovalBypasses > 0 ? "change-negative" : "change-positive")">
+                                @if (reposWithApprovalBypassesPrevious.HasValue && reposWithApprovalBypasses.HasValue)
+                                {
+                                    var change = reposWithApprovalBypasses.Value - reposWithApprovalBypassesPrevious.Value;
+                                    var icon = change > 0 ? "bi-arrow-up" : change < 0 ? "bi-arrow-down" : "bi-dash";
+                                    <i class="bi @icon"></i>@(change >= 0 ? "+" : "")@change
+                                }
+                            </span>
+                        </div>
+                        <div class="metric-details">
+                            <p class="period-info">Last period: @(reposWithApprovalBypassesPrevious ?? 0)</p>
+                            <p class="period-info">@GetPeriodText()</p>
+                        </div>
+                    </div>
+                </div>
             </div>
+            <!-- Position 1-3: Approval Bypass Rate -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card @GetApprovalBypassRateCardClass()">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title @GetApprovalBypassRateTextClass()">Approval Bypass Rate</h5>
+                            <i class="bi bi-percent bi-icon @GetApprovalBypassRateIconClass()"></i>
+                        </div>
+                        <div class="metric-value-container">
+                            <span class="@GetApprovalBypassRateValueClass()">@(approvalBypassRate?.ToString("F1") ?? "0.0")%</span>
+                            <span class="percentage-change @GetApprovalBypassRateChangeClass()">
+                                @if (approvalBypassRatePrevious.HasValue && approvalBypassRate.HasValue)
+                                {
+                                    var change = approvalBypassRate.Value - approvalBypassRatePrevious.Value;
+                                    var icon = change > 0 ? "bi-arrow-up" : change < 0 ? "bi-arrow-down" : "bi-dash";
+                                    <i class="bi @icon"></i>@((change >= 0 ? "+" : "") + change.ToString("F1") + "%")
+                                }
+                            </span>
+                        </div>
+                        <div class="metric-details">
+                            <p class="period-info">Last period: @(approvalBypassRatePrevious?.ToString("F1") ?? "0.0")%</p>
+                            <p class="period-info">Target: 0%</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 2: Process Efficiency & Bottlenecks -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4 class="mb-3 text-warning"><i class="bi bi-speedometer2"></i> Process Efficiency</h4>
+            </div>
+            <!-- Position 2-1: Average Review Time -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card @GetAverageReviewTimeCardClass()">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title @GetAverageReviewTimeTextClass()">Average Review Time</h5>
+                            <i class="bi bi-clock-history bi-icon @GetAverageReviewTimeIconClass()"></i>
+                        </div>
+                        <div class="metric-value-container">
+                            <span class="@GetAverageReviewTimeValueClass()">@(averageReviewTimeHours?.ToString("F1") ?? "0.0")h</span>
+                            <span class="percentage-change @GetAverageReviewTimeChangeClass()">
+                                @if (averageReviewTimeHoursPrevious.HasValue && averageReviewTimeHours.HasValue)
+                                {
+                                    var change = averageReviewTimeHours.Value - averageReviewTimeHoursPrevious.Value;
+                                    var icon = change > 0 ? "bi-arrow-up" : change < 0 ? "bi-arrow-down" : "bi-dash";
+                                    <i class="bi @icon"></i>@((change >= 0 ? "+" : "") + change.ToString("F1") + "h")
+                                }
+                            </span>
+                        </div>
+                        <div class="metric-details">
+                            <p class="period-info">Last period: @(averageReviewTimeHoursPrevious?.ToString("F1") ?? "0.0")h</p>
+                            <p class="period-info">Target: &lt;4h (Good), 4-24h (Fair), &gt;24h (Poor)</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Position 2-2: Average Merge Time -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card @GetAverageMergeTimeCardClass()">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title @GetAverageMergeTimeTextClass()">Average Merge Time</h5>
+                            <i class="bi bi-git bi-icon @GetAverageMergeTimeIconClass()"></i>
+                        </div>
+                        <div class="metric-value-container">
+                            <span class="@GetAverageMergeTimeValueClass()">@(averageMergeTimeDays?.ToString("F1") ?? "0.0")d</span>
+                            <span class="percentage-change @GetAverageMergeTimeChangeClass()">
+                                @if (averageMergeTimeDaysPrevious.HasValue && averageMergeTimeDays.HasValue)
+                                {
+                                    var change = averageMergeTimeDays.Value - averageMergeTimeDaysPrevious.Value;
+                                    var icon = change > 0 ? "bi-arrow-up" : change < 0 ? "bi-arrow-down" : "bi-dash";
+                                    <i class="bi @icon"></i>@((change >= 0 ? "+" : "") + change.ToString("F1") + "d")
+                                }
+                            </span>
+                        </div>
+                        <div class="metric-details">
+                            <p class="period-info">Last period: @(averageMergeTimeDaysPrevious?.ToString("F1") ?? "0.0")d</p>
+                            <p class="period-info">Target: &lt;2d (Good), 2-5d (Fair), &gt;5d (Poor)</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Position 2-3: Review Bottleneck Score -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card @GetBottleneckScoreCardClass()">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title @GetBottleneckScoreTextClass()">Review Bottleneck Score</h5>
+                            <i class="bi bi-funnel bi-icon @GetBottleneckScoreIconClass()"></i>
+                        </div>
+                        <div class="metric-value-container">
+                            <span class="@GetBottleneckScoreValueClass()">@(reviewBottleneckScore?.ToString("F1") ?? "0.0")</span>
+                            <span class="percentage-change @GetBottleneckScoreChangeClass()">
+                                @if (reviewBottleneckScorePrevious.HasValue && reviewBottleneckScore.HasValue)
+                                {
+                                    var change = reviewBottleneckScore.Value - reviewBottleneckScorePrevious.Value;
+                                    var icon = change > 0 ? "bi-arrow-up" : change < 0 ? "bi-arrow-down" : "bi-dash";
+                                    <i class="bi @icon"></i>@(change >= 0 ? "+" : "")@change.ToString("F1")
+                                }
+                            </span>
+                        </div>
+                        <div class="metric-details">
+                            <p class="period-info">Last period: @(reviewBottleneckScorePrevious?.ToString("F1") ?? "0.0")</p>
+                            <p class="period-info">Target: &lt;2 (Good), 2-5 (Fair), &gt;5 (Poor)</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 3: Team Workload & Activity -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4 class="mb-3 text-primary"><i class="bi bi-people"></i> Team Workload & Activity</h4>
+            </div>
+            <!-- Position 3-1: Active vs Stale PRs -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card @GetActiveStaleCardClass()">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title @GetActiveStaleTextClass()">Active vs Stale PRs</h5>
+                            <i class="bi bi-hourglass-split bi-icon @GetActiveStaleIconClass()"></i>
+                        </div>
+                        <div class="metric-breakdown">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="text-success">Fresh (&lt;3d): @(freshPrs ?? 0)</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="text-warning">Active (3-7d): @(activePrs ?? 0)</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="text-danger">Stale (&gt;7d): @(stalePrs ?? 0)</span>
+                            </div>
+                        </div>
+                        <div class="metric-details mt-2">
+                            <p class="period-info">Total Open: @((freshPrs ?? 0) + (activePrs ?? 0) + (stalePrs ?? 0))</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Position 3-2: Team PR Velocity -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card @GetTeamVelocityCardClass()">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title @GetTeamVelocityTextClass()">Team PR Velocity</h5>
+                            <i class="bi bi-arrow-up-right-circle bi-icon @GetTeamVelocityIconClass()"></i>
+                        </div>
+                        <div class="metric-value-container">
+                            <span class="@GetTeamVelocityValueClass()">@(teamPrVelocity ?? 0)</span>
+                            <span class="small text-muted">/week</span>
+                        </div>
+                        <div class="metric-details">
+                            <p class="period-info">4-week avg: @(teamPrVelocityAverage?.ToString("F1") ?? "0.0")</p>
+                            <p class="period-info">@(teamPrVelocity > teamPrVelocityAverage ? "Above" : teamPrVelocity < teamPrVelocityAverage ? "Below" : "At") average</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Position 3-3: Review Distribution -->
+            <div class="col-lg-4 col-md-6 mb-3">
+                <div class="card kpi-card @GetReviewDistributionCardClass()">
+                    <div class="card-body">
+                        <div class="card-header-icon">
+                            <h5 class="card-title @GetReviewDistributionTextClass()">Review Distribution</h5>
+                            <i class="bi bi-bar-chart bi-icon @GetReviewDistributionIconClass()"></i>
+                        </div>
+                        <div class="metric-value-container">
+                            <span class="@GetReviewDistributionValueClass()">@((reviewDistributionBalance ?? 0m).ToString("F1"))%</span>
+                            <span class="small text-muted">balance</span>
+                        </div>
+                        <div class="metric-details">
+                            <p class="period-info">Reviewers: @(activeReviewers ?? 0)</p>
+                            <p class="period-info">Std Dev: @(reviewDistributionStdDev?.ToString("F1") ?? "0.0")</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         }
 
-        @if (isLoadingTopOldestOpenPrs)
-        {
-            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter">
-                <div class="d-flex align-items-center">
-                    <div class="spinner-border spinner-border-sm me-2" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <span>Loading top oldest open PRs...</span>
-                </div>
-            </RadzenAlert>
-        }
-        else if (topOldestOpenPrs != null && topOldestOpenPrs.Any())
-        {
-            <div class="row mb-4">
-                <div class="col-md-6">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Top 5 Projects by Oldest Open PRs</h5>
-                        </div>
-                        <div class="card-body">
-                            <RadzenDataGrid Data="@topOldestOpenPrs" TItem="RepositorySummaryDto" AllowColumnResize="true">
-                                <Columns>
-                                    <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="Name" Title="Repository" />
-                                    <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="OldestOpenPullRequestDate" Title="Oldest PR Date" TextAlign="TextAlign.Center" FormatString="{0:yyyy-MM-dd}" />
-                                </Columns>
-                            </RadzenDataGrid>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle me-2"></i>
-                No data for top oldest open PRs found for the selected criteria.
-            </div>
-        }
+        <!-- Existing blocks moved to bottom -->
 
-        @if (isLoadingTopUnapprovedPrs)
+        <!-- Loading states for all three blocks -->
+        @if (isLoadingTopOpenPrs || isLoadingTopOldestOpenPrs || isLoadingTopUnapprovedPrs)
         {
             <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter">
                 <div class="d-flex align-items-center">
                     <div class="spinner-border spinner-border-sm me-2" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
-                    <span>Loading top unapproved PRs...</span>
+                    <span>Loading PR data...</span>
                 </div>
             </RadzenAlert>
         }
-        else if (topUnapprovedPrs != null && topUnapprovedPrs.Any())
-        {
-            <div class="row mb-4">
-                <div class="col-md-6">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Top 5 Projects by Unapproved PRs</h5>
-                        </div>
-                        <div class="card-body">
-                            <RadzenDataGrid Data="@topUnapprovedPrs" TItem="RepositorySummaryDto" AllowColumnResize="true">
-                                <Columns>
-                                    <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="Name" Title="Repository" />
-                                    <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="PRsMissingApprovalCount" Title="Missing Approvals" TextAlign="TextAlign.Center" />
-                                </Columns>
-                            </RadzenDataGrid>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        }
         else
         {
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle me-2"></i>
-                No data for top unapproved PRs found for the selected criteria.
+            <!-- All three blocks in one row -->
+            <div class="row mb-4">
+                <!-- Top Open PRs -->
+                <div class="col-lg-4 col-md-12 mb-3">
+                    @if (topOpenPrs != null && topOpenPrs.Any())
+                    {
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">Top 5 Projects by Open PRs</h5>
+                            </div>
+                            <div class="card-body" style="height: 300px; overflow-y: auto;">
+                                <RadzenDataGrid Data="@topOpenPrs" TItem="RepositorySummaryDto" AllowColumnResize="true" AllowPaging="false" Style="height: 100%;">
+                                    <Columns>
+                                        <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="Name" Title="Repository" />
+                                        <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="OpenPullRequestCount" Title="Open PRs" TextAlign="TextAlign.Center" />
+                                    </Columns>
+                                </RadzenDataGrid>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">Top 5 Projects by Open PRs</h5>
+                            </div>
+                            <div class="card-body d-flex align-items-center justify-content-center" style="height: 300px;">
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    No data found
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Top Oldest Open PRs -->
+                <div class="col-lg-4 col-md-12 mb-3">
+                    @if (topOldestOpenPrs != null && topOldestOpenPrs.Any())
+                    {
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">Top 5 Projects by Oldest Open PRs</h5>
+                            </div>
+                            <div class="card-body" style="height: 300px; overflow-y: auto;">
+                                <RadzenDataGrid Data="@topOldestOpenPrs" TItem="RepositorySummaryDto" AllowColumnResize="true" AllowPaging="false" Style="height: 100%;">
+                                    <Columns>
+                                        <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="Name" Title="Repository" />
+                                        <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="OldestOpenPullRequestDate" Title="Oldest PR Date" TextAlign="TextAlign.Center" FormatString="{0:yyyy-MM-dd}" />
+                                    </Columns>
+                                </RadzenDataGrid>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">Top 5 Projects by Oldest Open PRs</h5>
+                            </div>
+                            <div class="card-body d-flex align-items-center justify-content-center" style="height: 300px;">
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    No data found
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Top Unapproved PRs -->
+                <div class="col-lg-4 col-md-12 mb-3">
+                    @if (topUnapprovedPrs != null && topUnapprovedPrs.Any())
+                    {
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">Top 5 Projects by Unapproved PRs</h5>
+                            </div>
+                            <div class="card-body" style="height: 300px; overflow-y: auto;">
+                                <RadzenDataGrid Data="@topUnapprovedPrs" TItem="RepositorySummaryDto" AllowColumnResize="true" AllowPaging="false" Style="height: 100%;">
+                                    <Columns>
+                                        <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="Name" Title="Repository" />
+                                        <RadzenDataGridColumn TItem="RepositorySummaryDto" Property="PRsMissingApprovalCount" Title="Missing Approvals" TextAlign="TextAlign.Center" />
+                                    </Columns>
+                                </RadzenDataGrid>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0">Top 5 Projects by Unapproved PRs</h5>
+                            </div>
+                            <div class="card-body d-flex align-items-center justify-content-center" style="height: 300px;">
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    No data found
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
             </div>
         }
     }
@@ -185,6 +464,43 @@
     private DateTime? startDate;
     private DateTime? endDate;
     private string? errorMessage;
+
+    // Team filtering variables
+    private bool isLoadingUsers = false;
+    private bool isLoadingTeams = false;
+    private IEnumerable<UserDto>? users;
+    private IEnumerable<TeamSummaryDto>? teams;
+    private int? selectedUserId;
+    private int? selectedTeamId;
+    private string filterType = "team";
+
+    // PR Dashboard KPI Data
+    private PrDashboardResponseDto? prDashboardData;
+    private bool isLoadingKpis = false;
+
+    // Helper properties for easy access
+    private int? prsMergedWithoutApproval => prDashboardData?.SecurityCompliance?.PrsMergedWithoutApproval;
+    private int? prsMergedWithoutApprovalPrevious => prDashboardData?.SecurityCompliance?.PrsMergedWithoutApprovalPrevious;
+    private int? reposWithApprovalBypasses => prDashboardData?.SecurityCompliance?.ReposWithApprovalBypasses;
+    private int? reposWithApprovalBypassesPrevious => prDashboardData?.SecurityCompliance?.ReposWithApprovalBypassesPrevious;
+    private decimal? approvalBypassRate => prDashboardData?.SecurityCompliance?.ApprovalBypassRate;
+    private decimal? approvalBypassRatePrevious => prDashboardData?.SecurityCompliance?.ApprovalBypassRatePrevious;
+
+    private decimal? averageReviewTimeHours => prDashboardData?.ProcessEfficiency?.AverageReviewTimeHours;
+    private decimal? averageReviewTimeHoursPrevious => prDashboardData?.ProcessEfficiency?.AverageReviewTimeHoursPrevious;
+    private decimal? averageMergeTimeDays => prDashboardData?.ProcessEfficiency?.AverageMergeTimeDays;
+    private decimal? averageMergeTimeDaysPrevious => prDashboardData?.ProcessEfficiency?.AverageMergeTimeDaysPrevious;
+    private decimal? reviewBottleneckScore => prDashboardData?.ProcessEfficiency?.ReviewBottleneckScore;
+    private decimal? reviewBottleneckScorePrevious => prDashboardData?.ProcessEfficiency?.ReviewBottleneckScorePrevious;
+
+    private int? freshPrs => prDashboardData?.TeamWorkload?.FreshPrs;
+    private int? activePrs => prDashboardData?.TeamWorkload?.ActivePrs;
+    private int? stalePrs => prDashboardData?.TeamWorkload?.StalePrs;
+    private int? teamPrVelocity => prDashboardData?.TeamWorkload?.TeamPrVelocity;
+    private decimal? teamPrVelocityAverage => prDashboardData?.TeamWorkload?.TeamPrVelocityAverage;
+    private decimal? reviewDistributionBalance => prDashboardData?.TeamWorkload?.ReviewDistributionBalance;
+    private decimal? reviewDistributionStdDev => prDashboardData?.TeamWorkload?.ReviewDistributionStdDev;
+    private int? activeReviewers => prDashboardData?.TeamWorkload?.ActiveReviewersCount;
 
     protected override async Task OnInitializedAsync()
     {
@@ -218,9 +534,12 @@
             selectedRepoSlug = "ALL";
             startDate = DateTime.Today.AddDays(-30);
             endDate = DateTime.Today;
-            await LoadTopOpenPrs();
-            await LoadTopOldestOpenPrs();
-            await LoadTopUnapprovedPrs();
+            
+            // Load users and teams for filtering
+            await LoadUsersAndTeams();
+            
+            // Load all KPI data
+            await LoadPrDashboardData();
         }
     }
 
@@ -247,9 +566,41 @@
         }
     }
 
-    private async Task OnRepositorySelected(string? slug)
+    private void OnRepositorySelected(string? slug)
     {
         selectedRepoSlug = slug;
+    }
+
+    private void OnUserSelected(int? userId)
+    {
+        selectedUserId = userId;
+    }
+
+    private void OnTeamSelected(int? teamId)
+    {
+        selectedTeamId = teamId;
+    }
+
+    private void OnFilterTypeChanged(string newFilterType)
+    {
+        filterType = newFilterType;
+        if (filterType == "user")
+        {
+            selectedTeamId = null;
+        }
+        else if (filterType == "team")
+        {
+            selectedUserId = null;
+        }
+    }
+
+    private void OnFiltersChanged((bool includePR, bool includeData, bool includeConfig) filters)
+    {
+        // Not used in PR dashboard but required for CommitsFilter compatibility
+    }
+
+    private async Task OnSearchButtonClicked()
+    {
         await RefreshDashboardData();
     }
 
@@ -264,18 +615,82 @@
     {
         if (!string.IsNullOrEmpty(selectedRepoSlug) && WorkspaceService.HasSelectedWorkspace)
         {
-            await LoadTopOpenPrs();
-            await LoadTopOldestOpenPrs();
-            await LoadTopUnapprovedPrs();
+            await LoadPrDashboardData();
             StateHasChanged();
         }
         else
         {
-            topOpenPrs = null;
-            topOldestOpenPrs = null;
-            topUnapprovedPrs = null;
+            // Reset all KPI data
+            ResetAllKpiData();
             StateHasChanged();
         }
+    }
+
+    private async Task LoadPrDashboardData()
+    {
+        try
+        {
+            isLoadingKpis = true;
+            StateHasChanged();
+
+            await Task.WhenAll(
+                LoadPrDashboardKpis(),
+                LoadTopOpenPrs(),
+                LoadTopOldestOpenPrs(),
+                LoadTopUnapprovedPrs()
+            );
+        }
+        finally
+        {
+            isLoadingKpis = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadPrDashboardKpis()
+    {
+        try
+        {
+            var workspace = WorkspaceService.SelectedWorkspace;
+            if (string.IsNullOrEmpty(workspace))
+            {
+                errorMessage = "No workspace selected. Please configure workspace in Settings.";
+                return;
+            }
+
+            var url = $"api/prdashboard?workspace={workspace}";
+            
+            if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "ALL")
+                url += $"&repoSlug={selectedRepoSlug}";
+            
+            if (startDate.HasValue)
+                url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+                
+            if (endDate.HasValue)
+                url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+
+            // Add user/team filtering
+            if (filterType == "user" && selectedUserId.HasValue)
+                url += $"&userId={selectedUserId.Value}";
+            
+            if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1)
+                url += $"&teamId={selectedTeamId.Value}";
+
+            prDashboardData = await Http.GetFromJsonAsync<PrDashboardResponseDto>(url);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading PR dashboard data: {ex.Message}";
+            Logger.LogError(ex, "Error loading PR dashboard KPIs");
+        }
+    }
+
+    private void ResetAllKpiData()
+    {
+        prDashboardData = null;
+        topOpenPrs = null;
+        topOldestOpenPrs = null;
+        topUnapprovedPrs = null;
     }
 
     private async Task LoadTopOpenPrs()
@@ -406,7 +821,198 @@
             StateHasChanged();
         }
     }
+
+    private async Task LoadUsersAndTeams()
+    {
+        try
+        {
+            // Load users
+            isLoadingUsers = true;
+            StateHasChanged();
+            users = await Http.GetFromJsonAsync<IEnumerable<UserDto>>("/api/analytics/users");
+            
+            // Load teams
+            isLoadingTeams = true;
+            StateHasChanged();
+            teams = await Http.GetFromJsonAsync<IEnumerable<TeamSummaryDto>>("/api/analytics/teams");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading users/teams");
+        }
+        finally
+        {
+            isLoadingUsers = false;
+            isLoadingTeams = false;
+            StateHasChanged();
+        }
+    }
+
+    // Removed mock data methods - now using real API calls through LoadPrDashboardKpis()
+
+    private string GetPeriodText()
+    {
+        if (startDate.HasValue && endDate.HasValue)
+        {
+            return $"{startDate.Value:MMM dd} - {endDate.Value:MMM dd, yyyy}";
+        }
+        return "Current Period";
+    }
+
+    // Row 1: Security & Compliance - Helper methods for styling
+    private string GetApprovalBypassRateCardClass() => approvalBypassRate > 5 ? "alert-high" : approvalBypassRate > 1 ? "warning" : "positive";
+    private string GetApprovalBypassRateTextClass() => approvalBypassRate > 5 ? "text-danger" : approvalBypassRate > 1 ? "text-warning" : "text-success";
+    private string GetApprovalBypassRateIconClass() => approvalBypassRate > 5 ? "icon-negative" : approvalBypassRate > 1 ? "icon-warning" : "icon-positive";
+    private string GetApprovalBypassRateValueClass() => approvalBypassRate > 5 ? "value-negative" : approvalBypassRate > 1 ? "value-warning" : "value-positive";
+    private string GetApprovalBypassRateChangeClass() => approvalBypassRatePrevious.HasValue && approvalBypassRate.HasValue ? 
+        (approvalBypassRate > approvalBypassRatePrevious ? "change-negative" : "change-positive") : "change-neutral";
+
+    // Row 2: Process Efficiency - Helper methods for styling
+    private string GetAverageReviewTimeCardClass() => averageReviewTimeHours > 24 ? "alert-high" : averageReviewTimeHours > 4 ? "warning" : "positive";
+    private string GetAverageReviewTimeTextClass() => averageReviewTimeHours > 24 ? "text-danger" : averageReviewTimeHours > 4 ? "text-warning" : "text-success";
+    private string GetAverageReviewTimeIconClass() => averageReviewTimeHours > 24 ? "icon-negative" : averageReviewTimeHours > 4 ? "icon-warning" : "icon-positive";
+    private string GetAverageReviewTimeValueClass() => averageReviewTimeHours > 24 ? "value-negative" : averageReviewTimeHours > 4 ? "value-warning" : "value-positive";
+    private string GetAverageReviewTimeChangeClass() => averageReviewTimeHoursPrevious.HasValue && averageReviewTimeHours.HasValue ? 
+        (averageReviewTimeHours > averageReviewTimeHoursPrevious ? "change-negative" : "change-positive") : "change-neutral";
+
+    private string GetAverageMergeTimeCardClass() => averageMergeTimeDays > 5 ? "alert-high" : averageMergeTimeDays > 2 ? "warning" : "positive";
+    private string GetAverageMergeTimeTextClass() => averageMergeTimeDays > 5 ? "text-danger" : averageMergeTimeDays > 2 ? "text-warning" : "text-success";
+    private string GetAverageMergeTimeIconClass() => averageMergeTimeDays > 5 ? "icon-negative" : averageMergeTimeDays > 2 ? "icon-warning" : "icon-positive";
+    private string GetAverageMergeTimeValueClass() => averageMergeTimeDays > 5 ? "value-negative" : averageMergeTimeDays > 2 ? "value-warning" : "value-positive";
+    private string GetAverageMergeTimeChangeClass() => averageMergeTimeDaysPrevious.HasValue && averageMergeTimeDays.HasValue ? 
+        (averageMergeTimeDays > averageMergeTimeDaysPrevious ? "change-negative" : "change-positive") : "change-neutral";
+
+    private string GetBottleneckScoreCardClass() => reviewBottleneckScore > 5 ? "alert-high" : reviewBottleneckScore > 2 ? "warning" : "positive";
+    private string GetBottleneckScoreTextClass() => reviewBottleneckScore > 5 ? "text-danger" : reviewBottleneckScore > 2 ? "text-warning" : "text-success";
+    private string GetBottleneckScoreIconClass() => reviewBottleneckScore > 5 ? "icon-negative" : reviewBottleneckScore > 2 ? "icon-warning" : "icon-positive";
+    private string GetBottleneckScoreValueClass() => reviewBottleneckScore > 5 ? "value-negative" : reviewBottleneckScore > 2 ? "value-warning" : "value-positive";
+    private string GetBottleneckScoreChangeClass() => reviewBottleneckScorePrevious.HasValue && reviewBottleneckScore.HasValue ? 
+        (reviewBottleneckScore > reviewBottleneckScorePrevious ? "change-negative" : "change-positive") : "change-neutral";
+
+    // Row 3: Team Workload - Helper methods for styling
+    private string GetActiveStaleCardClass() => stalePrs > 10 ? "alert-high" : stalePrs > 5 ? "warning" : "positive";
+    private string GetActiveStaleTextClass() => stalePrs > 10 ? "text-danger" : stalePrs > 5 ? "text-warning" : "text-success";
+    private string GetActiveStaleIconClass() => stalePrs > 10 ? "icon-negative" : stalePrs > 5 ? "icon-warning" : "icon-positive";
+
+    private string GetTeamVelocityCardClass() => teamPrVelocityAverage.HasValue ? 
+        (teamPrVelocity > teamPrVelocityAverage ? "positive" : teamPrVelocity < teamPrVelocityAverage ? "warning" : "neutral") : "neutral";
+    private string GetTeamVelocityTextClass() => teamPrVelocityAverage.HasValue ? 
+        (teamPrVelocity > teamPrVelocityAverage ? "text-success" : teamPrVelocity < teamPrVelocityAverage ? "text-warning" : "text-primary") : "text-primary";
+    private string GetTeamVelocityIconClass() => teamPrVelocityAverage.HasValue ? 
+        (teamPrVelocity > teamPrVelocityAverage ? "icon-positive" : teamPrVelocity < teamPrVelocityAverage ? "icon-warning" : "icon-neutral") : "icon-neutral";
+    private string GetTeamVelocityValueClass() => teamPrVelocityAverage.HasValue ? 
+        (teamPrVelocity > teamPrVelocityAverage ? "value-positive" : teamPrVelocity < teamPrVelocityAverage ? "value-warning" : "value-neutral") : "value-neutral";
+
+    private string GetReviewDistributionCardClass() => reviewDistributionBalance < 50 ? "alert-high" : reviewDistributionBalance < 70 ? "warning" : "positive";
+    private string GetReviewDistributionTextClass() => reviewDistributionBalance < 50 ? "text-danger" : reviewDistributionBalance < 70 ? "text-warning" : "text-success";
+    private string GetReviewDistributionIconClass() => reviewDistributionBalance < 50 ? "icon-negative" : reviewDistributionBalance < 70 ? "icon-warning" : "icon-positive";
+    private string GetReviewDistributionValueClass() => reviewDistributionBalance < 50 ? "value-negative" : reviewDistributionBalance < 70 ? "value-warning" : "value-positive";
 }
+
+<!-- Include CSS for KPI styling -->
+<style>
+    /* KPI Card Styling */
+    .kpi-card {
+        transition: all 0.3s ease;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 2px solid transparent;
+    }
+    
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    
+    .kpi-card.alert-high {
+        border-color: #dc3545;
+        background: linear-gradient(135deg, rgba(220, 53, 69, 0.1), rgba(220, 53, 69, 0.05));
+    }
+    
+    .kpi-card.positive {
+        border-color: #198754;
+        background: linear-gradient(135deg, rgba(25, 135, 84, 0.1), rgba(25, 135, 84, 0.05));
+    }
+    
+    .kpi-card.warning {
+        border-color: #fd7e14;
+        background: linear-gradient(135deg, rgba(253, 126, 20, 0.1), rgba(253, 126, 20, 0.05));
+    }
+    
+    .kpi-card.neutral {
+        border-color: #6f42c1;
+        background: linear-gradient(135deg, rgba(111, 66, 193, 0.1), rgba(111, 66, 193, 0.05));
+    }
+    
+    .card-header-icon {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    
+    .bi-icon {
+        font-size: 1.5rem;
+        animation: none;
+    }
+    
+    .kpi-card.alert-high .bi-icon {
+        animation: pulse-red 2s infinite;
+    }
+    
+    @@keyframes pulse-red {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+    
+    .metric-value-container {
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .metric-value-container span:first-child {
+        font-size: 2rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+    
+    .percentage-change {
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    
+    .metric-breakdown {
+        margin-bottom: 1rem;
+    }
+    
+    .metric-details p {
+        margin: 0;
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+    
+    .period-info {
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+    
+    .value-positive { color: #198754; }
+    .value-negative { color: #dc3545; }
+    .value-warning { color: #fd7e14; }
+    .value-neutral { color: #6f42c1; }
+    
+    .change-positive { color: #198754; }
+    .change-negative { color: #dc3545; }
+    .change-warning { color: #fd7e14; }
+    .change-neutral { color: #6c757d; }
+    
+    .icon-positive { color: #198754; }
+    .icon-negative { color: #dc3545; }
+    .icon-warning { color: #fd7e14; }
+    .icon-neutral { color: #6f42c1; }
+</style>
 
 <script>
     window.setPrDashboardDotNetRef = function(dotNetRef) {

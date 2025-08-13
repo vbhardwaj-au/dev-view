@@ -82,6 +82,7 @@ namespace API.Endpoints.Analytics
             PrAgeGraph prAgeGraphData;
             List<ContributorStats> topContributors;
             int usersWithNoActivity;
+            int previousPeriodUsersWithNoActivity;
             List<ApproverStats> topApprovers;
             PrsMergedByWeekdayData prsMergedByWeekdayData;
 
@@ -90,6 +91,7 @@ namespace API.Endpoints.Analytics
             prAgeGraphData = await GetPrAgeGraphData(connection, startDate.Value, endDate.Value, repoSlug, workspace);
             topContributors = await GetTopContributors(connection, startDate.Value, endDate.Value, repoSlug, workspace, userId, teamId, includePR, showExcluded);
             usersWithNoActivity = await GetUsersWithNoActivity(connection, startDate.Value, endDate.Value, repoSlug, workspace, userId, teamId, includePR, showExcluded);
+            previousPeriodUsersWithNoActivity = await GetUsersWithNoActivity(connection, previousPeriodStartDate, previousPeriodEndDate, repoSlug, workspace, userId, teamId, includePR, showExcluded);
             topApprovers = await GetTopApprovers(connection, startDate.Value, endDate.Value, repoSlug, workspace, teamId);
             prsMergedByWeekdayData = await GetPrsMergedByWeekdayData(connection, startDate.Value, endDate.Value, repoSlug, workspace);
 
@@ -100,6 +102,7 @@ namespace API.Endpoints.Analytics
                 PrAgeGraphData = prAgeGraphData,
                 TopContributors = topContributors,
                 UsersWithNoActivity = usersWithNoActivity,
+                PreviousPeriodUsersWithNoActivity = previousPeriodUsersWithNoActivity,
                 TopApprovers = topApprovers,
                 PrsMergedByWeekdayData = prsMergedByWeekdayData
             };
@@ -224,6 +227,10 @@ namespace API.Endpoints.Analytics
                 mergedPrWhereConditions.Add("r.Workspace = @workspace");
             if (!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase))
                 mergedPrWhereConditions.Add("r.Slug = @repoSlug");
+            if (userId.HasValue)
+                mergedPrWhereConditions.Add("pr.AuthorId = @userId");
+            if (teamId.HasValue && teamId.Value > 0)
+                mergedPrWhereConditions.Add("pr.AuthorId IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId)");
             
             mergedPrWhereConditions.Add("pr.MergedOn >= @periodStartDate");
             mergedPrWhereConditions.Add("pr.MergedOn <= @periodEndDate");
@@ -233,7 +240,39 @@ namespace API.Endpoints.Analytics
             
             var totalMergedPrs = await connection.QuerySingleOrDefaultAsync<int>(
                 $"SELECT COUNT(*) FROM PullRequests pr JOIN Repositories r ON pr.RepositoryId = r.Id {mergedPrWhereClause}",
-                new { periodStartDate, periodEndDate, repoSlug, workspace });
+                new { periodStartDate, periodEndDate, repoSlug, workspace, userId, teamId });
+
+            // PRs Approved - Count unique PRs that were approved in this period
+            var prsApprovedSql = $@"
+                SELECT COUNT(DISTINCT pra.PullRequestId)
+                FROM PullRequestApprovals pra
+                JOIN PullRequests pr ON pra.PullRequestId = pr.Id
+                JOIN Repositories r ON pr.RepositoryId = r.Id
+                WHERE pra.ApprovedOn >= @periodStartDate 
+                    AND pra.ApprovedOn <= @periodEndDate 
+                    AND pra.Approved = 1
+                    {(!string.IsNullOrEmpty(workspace) ? " AND r.Workspace = @workspace" : "")}
+                    {(!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase) ? " AND r.Slug = @repoSlug" : "")}";
+            
+            // Add user/team filtering for PRs approved
+            if (userId.HasValue)
+            {
+                prsApprovedSql += @" AND EXISTS (
+                    SELECT 1 FROM Users u 
+                    WHERE u.BitbucketUserId = pra.UserUuid 
+                    AND u.Id = @userId)";
+            }
+            else if (teamId.HasValue && teamId.Value > 0)
+            {
+                prsApprovedSql += @" AND EXISTS (
+                    SELECT 1 FROM Users u 
+                    JOIN TeamMembers tm ON u.Id = tm.UserId 
+                    WHERE u.BitbucketUserId = pra.UserUuid 
+                    AND tm.TeamId = @teamId)";
+            }
+            
+            var prsApproved = await connection.QuerySingleOrDefaultAsync<int>(
+                prsApprovedSql, new { periodStartDate, periodEndDate, repoSlug, workspace, userId, teamId });
 
             // Calculate line metrics
             var excludeCondition = showExcluded ? "" : " AND cf.ExcludeFromReporting = 0";
@@ -273,6 +312,7 @@ namespace API.Endpoints.Analytics
                 TotalLicensedUsers = totalLicensedUsers, 
                 PrsNotApprovedAndMerged = prsNotApprovedAndMerged,
                 TotalMergedPrs = totalMergedPrs,
+                PrsApproved = prsApproved,
                 TotalLinesAdded = totalLines.TotalLinesAdded,
                 TotalLinesRemoved = totalLines.TotalLinesRemoved,
                 CodeLinesAdded = codeLines.CodeLinesAdded,

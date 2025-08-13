@@ -461,7 +461,7 @@
                                 pointRadius: 2,
                                 pointHoverRadius: 5,
                                 borderWidth: 1.5,
-                                hidden: false // Ensure it's visible by default
+                                hidden: true // Now hidden by default
                             },
                             {
                                 label: 'Total --',
@@ -473,7 +473,7 @@
                                 pointRadius: 2,
                                 pointHoverRadius: 5,
                                 borderWidth: 1.5,
-                                hidden: false // Ensure it's visible by default
+                                hidden: true // Now hidden by default
                             },
                             {
                                 label: '🧑‍💻 Code ++',
@@ -485,7 +485,7 @@
                                 pointRadius: 2,
                                 pointHoverRadius: 5,
                                 borderWidth: 1.5,
-                                hidden: true
+                                hidden: false // Now visible by default
                             },
                             {
                                 label: '🧑‍💻 Code --',
@@ -497,7 +497,19 @@
                                 pointRadius: 2,
                                 pointHoverRadius: 5,
                                 borderWidth: 1.5,
-                                hidden: true
+                                hidden: false // Now visible by default
+                            },
+                            {
+                                label: 'Net Code',
+                                data: codeAdded.map((added, index) => added - codeRemoved[index]),
+                                borderColor: 'rgb(59, 130, 246)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                fill: false,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 5,
+                                borderWidth: 2,
+                                hidden: false // Visible by default
                             },
                             {
                                 label: '🗄️ Data ++',
@@ -599,6 +611,9 @@
                                                 return `🧑‍💻 Code ++: ${item.codeLinesAdded.toLocaleString()} lines`;
                                             case '🧑‍💻 Code --':
                                                 return `🧑‍💻 Code --: ${item.codeLinesRemoved.toLocaleString()} lines`;
+                                            case 'Net Code':
+                                                const netCode = item.codeLinesAdded - item.codeLinesRemoved;
+                                                return `📊 Net Code: ${netCode >= 0 ? '+' : ''}${netCode.toLocaleString()} lines`;
                                             case '🗄️ Data ++':
                                                 return `🗄️ Data ++: ${item.dataLinesAdded.toLocaleString()} lines`;
                                             case '🗄️ Data --':
@@ -740,7 +755,7 @@
                             pointRadius: 2,
                             pointHoverRadius: 5,
                             borderWidth: 1.5,
-                            hidden: false
+                            hidden: true
                         },
                         {
                             label: 'Total --',
@@ -752,7 +767,7 @@
                             pointRadius: 2,
                             pointHoverRadius: 5,
                             borderWidth: 1.5,
-                            hidden: false
+                            hidden: true
                         },
                         {
                             label: '🧑‍💻 Code ++',
@@ -764,7 +779,7 @@
                             pointRadius: 2,
                             pointHoverRadius: 5,
                             borderWidth: 1.5,
-                            hidden: true
+                            hidden: false
                         },
                         {
                             label: '🧑‍💻 Code --',
@@ -776,7 +791,19 @@
                             pointRadius: 2,
                             pointHoverRadius: 5,
                             borderWidth: 1.5,
-                            hidden: true
+                            hidden: false
+                        },
+                        {
+                            label: 'Net Code',
+                            data: codeAdded.map((added, index) => added - codeRemoved[index]),
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 2,
+                            hidden: false
                         },
                         {
                             label: '🗄️ Data ++',
@@ -878,6 +905,9 @@
                                             return `🧑‍💻 Code ++: ${item.codeLinesAdded.toLocaleString()} lines`;
                                         case '🧑‍💻 Code --':
                                             return `🧑‍💻 Code --: ${item.codeLinesRemoved.toLocaleString()} lines`;
+                                        case 'Net Code':
+                                            const netCode = item.codeLinesAdded - item.codeLinesRemoved;
+                                            return `📊 Net Code: ${netCode >= 0 ? '+' : ''}${netCode.toLocaleString()} lines`;
                                         case '🗄️ Data ++':
                                             return `🗄️ Data ++: ${item.dataLinesAdded.toLocaleString()} lines`;
                                         case '🗄️ Data --':

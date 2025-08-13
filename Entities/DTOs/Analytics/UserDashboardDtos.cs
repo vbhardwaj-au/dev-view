@@ -15,6 +15,7 @@ namespace Entities.DTOs.Analytics
         public PrAgeGraph PrAgeGraphData { get; set; } = new PrAgeGraph();
         public List<ContributorStats> TopContributors { get; set; } = new List<ContributorStats>();
         public int UsersWithNoActivity { get; set; }
+        public int PreviousPeriodUsersWithNoActivity { get; set; }
         public List<ApproverStats> TopApprovers { get; set; } = new List<ApproverStats>();
         public PrsMergedByWeekdayData PrsMergedByWeekdayData { get; set; } = new PrsMergedByWeekdayData();
     }
@@ -29,6 +30,7 @@ namespace Entities.DTOs.Analytics
         public int RepositoriesUpdated { get; set; }
         public int PrsNotApprovedAndMerged { get; set; }
         public int TotalMergedPrs { get; set; }
+        public int PrsApproved { get; set; }
         
         // Line metrics
         public int? TotalLinesAdded { get; set; }
