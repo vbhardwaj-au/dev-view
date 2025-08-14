@@ -491,30 +491,56 @@ namespace API.Endpoints.Analytics
                 using var connection = new SqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var whereConditions = BuildWhereConditions(repoSlug, workspace, userId, teamId);
-                var whereClause = whereConditions.Any() ? "AND " + string.Join(" AND ", whereConditions) : "";
+                // Debug: Check total merged PRs count
+                var totalMergedPrCount = await connection.QuerySingleAsync<int>("SELECT COUNT(*) FROM PullRequests WHERE State = 'MERGED'");
+                _logger.LogInformation($"Total merged PRs in database: {totalMergedPrCount}");
+
+                // Build conditions properly
+                var conditions = new List<string>();
+                
+                if (!string.IsNullOrEmpty(workspace))
+                    conditions.Add("r.Workspace = @workspace");
+                
+                if (!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase))
+                    conditions.Add("r.Slug = @repoSlug");
+                
+                if (userId.HasValue)
+                    conditions.Add("pr.AuthorId = @userId");
+                
+                if (teamId.HasValue && teamId.Value > 0)
+                    conditions.Add("pr.AuthorId IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId)");
+                
+                // Always exclude repositories from reporting
+                conditions.Add("r.ExcludeFromReporting = 0");
+                conditions.Add("pr.State = 'MERGED'");
+                conditions.Add("pr.MergedOn >= @startDate");
+                conditions.Add("pr.MergedOn <= @endDate");
+
+                var whereClause = "WHERE " + string.Join(" AND ", conditions);
 
                 var sql = $@"
                     SELECT DISTINCT pr.Id, pr.Title, r.Name as RepositoryName, u.DisplayName as AuthorName, 
                            pr.CreatedOn, pr.MergedOn, pr.State,
-                           CONCAT('https://bitbucket.org/', r.Workspace, '/', r.Slug, '/pull-requests/', pr.SourceBranchId) as Url
+                           CONCAT('https://bitbucket.org/', r.Workspace, '/', r.Slug, '/pull-requests/', pr.BitbucketPrId) as Url
                     FROM PullRequests pr
                     JOIN Repositories r ON pr.RepositoryId = r.Id
                     JOIN Users u ON pr.AuthorId = u.Id
-                    WHERE pr.State = 'MERGED'
-                        AND pr.MergedOn >= @startDate 
-                        AND pr.MergedOn <= @endDate
+                    {whereClause}
                         AND NOT EXISTS (
                             SELECT 1 FROM PullRequestApprovals pra 
                             WHERE pra.PullRequestId = pr.Id 
                             AND pra.Approved = 1
                         )
-                        {whereClause}
                     ORDER BY pr.MergedOn DESC";
+
+                _logger.LogInformation($"PRs Merged Without Approval SQL: {sql}");
+                _logger.LogInformation($"Date range: {startDate} to {endDate}");
 
                 var results = await connection.QueryAsync<PrDetailsDto>(sql, new { 
                     startDate, endDate, repoSlug, workspace, userId, teamId 
                 });
+
+                _logger.LogInformation($"PRs merged without approval found: {results.Count()}");
 
                 return Ok(results.ToList());
             }
@@ -603,24 +629,49 @@ namespace API.Endpoints.Analytics
                 using var connection = new SqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var whereConditions = BuildWhereConditions(repoSlug, workspace, userId, teamId);
-                var whereClause = whereConditions.Any() ? "AND " + string.Join(" AND ", whereConditions) : "";
+                // Debug: Check total PR count first
+                var totalPrCount = await connection.QuerySingleAsync<int>("SELECT COUNT(*) FROM PullRequests");
+                _logger.LogInformation($"Total PRs in database: {totalPrCount}");
+
+                // Build conditions properly
+                var conditions = new List<string>();
+                
+                if (!string.IsNullOrEmpty(workspace))
+                    conditions.Add("r.Workspace = @workspace");
+                
+                if (!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase))
+                    conditions.Add("r.Slug = @repoSlug");
+                
+                if (userId.HasValue)
+                    conditions.Add("pr.AuthorId = @userId");
+                
+                if (teamId.HasValue && teamId.Value > 0)
+                    conditions.Add("pr.AuthorId IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId)");
+                
+                // Always exclude repositories from reporting
+                conditions.Add("r.ExcludeFromReporting = 0");
+                conditions.Add("pr.State = 'OPEN'");
+
+                var whereClause = conditions.Any() ? "WHERE " + string.Join(" AND ", conditions) : "WHERE pr.State = 'OPEN'";
 
                 var sql = $@"
                     SELECT pr.Id, pr.Title, r.Name as RepositoryName, u.DisplayName as AuthorName, 
                            pr.CreatedOn, pr.State,
-                           CONCAT('https://bitbucket.org/', r.Workspace, '/', r.Slug, '/pull-requests/', pr.SourceBranchId) as Url,
+                           CONCAT('https://bitbucket.org/', r.Workspace, '/', r.Slug, '/pull-requests/', pr.BitbucketPrId) as Url,
                            (SELECT COUNT(*) FROM PullRequestApprovals pra WHERE pra.PullRequestId = pr.Id AND pra.Approved = 1) as ApprovalCount
                     FROM PullRequests pr
                     JOIN Repositories r ON pr.RepositoryId = r.Id
                     JOIN Users u ON pr.AuthorId = u.Id
-                    WHERE pr.State = 'OPEN'
-                        {whereClause}
+                    {whereClause}
                     ORDER BY pr.CreatedOn ASC";
+
+                _logger.LogInformation($"Active vs Stale PRs SQL: {sql}");
 
                 var results = await connection.QueryAsync<PrDetailsDto>(sql, new { 
                     startDate, endDate, repoSlug, workspace, userId, teamId 
                 });
+
+                _logger.LogInformation($"Active vs Stale PRs found: {results.Count()}");
 
                 return Ok(results.ToList());
             }
