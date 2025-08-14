@@ -595,7 +595,7 @@ namespace API.Endpoints.Analytics
                 WITH UserActivity AS (
                     -- Commits
                     SELECT c.AuthorId AS UserId, 
-                           MAX(c.Date) AS LastActivityDate,
+                           c.Date AS ActivityDate,
                            'commit' AS ActivityType
                     FROM Commits c 
                     JOIN Repositories r ON c.RepositoryId = r.Id
@@ -603,13 +603,12 @@ namespace API.Endpoints.Analytics
                     {(!string.IsNullOrEmpty(workspace) ? " AND r.Workspace = @workspace" : "")}
                     {(!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase) ? " AND r.Slug = @repoSlug" : "")}
                     {teamFilterCommits}
-                    GROUP BY c.AuthorId
                     
                     UNION ALL
                     
                     -- PRs Created
                     SELECT pr.AuthorId AS UserId, 
-                           MAX(pr.CreatedOn) AS LastActivityDate,
+                           pr.CreatedOn AS ActivityDate,
                            'pr_created' AS ActivityType
                     FROM PullRequests pr 
                     JOIN Repositories r ON pr.RepositoryId = r.Id
@@ -617,13 +616,12 @@ namespace API.Endpoints.Analytics
                     {(!string.IsNullOrEmpty(workspace) ? " AND r.Workspace = @workspace" : "")}
                     {(!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase) ? " AND r.Slug = @repoSlug" : "")}
                     {teamFilterPr}
-                    GROUP BY pr.AuthorId
                     
                     UNION ALL
                     
                     -- PRs Approved
                     SELECT u.Id AS UserId,
-                           MAX(pra.ApprovedOn) AS LastActivityDate,
+                           pra.ApprovedOn AS ActivityDate,
                            'pr_approved' AS ActivityType
                     FROM PullRequestApprovals pra
                     JOIN PullRequests pr ON pra.PullRequestId = pr.Id
@@ -633,31 +631,23 @@ namespace API.Endpoints.Analytics
                     {(!string.IsNullOrEmpty(workspace) ? " AND r.Workspace = @workspace" : "")}
                     {(!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase) ? " AND r.Slug = @repoSlug" : "")}
                     {teamFilterApproval}
-                    GROUP BY u.Id
                 ),
                 UserLastActivity AS (
                     SELECT UserId,
-                           MAX(LastActivityDate) AS LastActivityDate,
-                           FIRST_VALUE(ActivityType) OVER (PARTITION BY UserId ORDER BY LastActivityDate DESC) AS ActivityType
+                           ActivityDate,
+                           ActivityType,
+                           ROW_NUMBER() OVER (PARTITION BY UserId ORDER BY ActivityDate DESC) AS rn
                     FROM UserActivity
-                    GROUP BY UserId, ActivityType
-                ),
-                FinalUserActivity AS (
-                    SELECT UserId,
-                           MAX(LastActivityDate) AS LastActivityDate,
-                           FIRST_VALUE(ActivityType) OVER (PARTITION BY UserId ORDER BY LastActivityDate DESC) AS ActivityType
-                    FROM UserLastActivity
-                    GROUP BY UserId
                 )
                 SELECT u.Id, 
                        u.DisplayName, 
                        u.AvatarUrl,
-                       COALESCE(ua.LastActivityDate, u.CreatedOn) AS LastActivityDate,
-                       COALESCE(ua.ActivityType, 'none') AS ActivityType,
-                       DATEDIFF(DAY, COALESCE(ua.LastActivityDate, u.CreatedOn), GETUTCDATE()) AS DaysSinceLastActivity
+                       COALESCE(ula.ActivityDate, u.CreatedOn) AS LastActivityDate,
+                       COALESCE(ula.ActivityType, 'none') AS ActivityType,
+                       DATEDIFF(DAY, COALESCE(ula.ActivityDate, u.CreatedOn), GETUTCDATE()) AS DaysSinceLastActivity
                 FROM Users u
-                LEFT JOIN FinalUserActivity ua ON u.Id = ua.UserId
-                WHERE (ua.LastActivityDate IS NULL OR ua.LastActivityDate < @periodStartDate)
+                LEFT JOIN UserLastActivity ula ON u.Id = ula.UserId AND ula.rn = 1
+                WHERE (ula.ActivityDate IS NULL OR ula.ActivityDate < @periodStartDate)
                 {teamFilter}
                 ORDER BY DaysSinceLastActivity DESC, u.DisplayName";
 

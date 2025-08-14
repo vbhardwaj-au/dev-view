@@ -82,6 +82,10 @@
     .kpi-card .bi {
         font-size: 1.5rem !important;
     }
+    
+    .kpi-drill-down-btn .bi {
+        font-size: 0.875rem !important;
+    }
 
     /* KPI Drill-down Button Styling */
     .kpi-drill-down-btn {
@@ -1614,7 +1618,6 @@
         {
             if (!WorkspaceService.HasSelectedWorkspace)
             {
-                errorMessage = "No workspace selected.";
                 return;
             }
 
@@ -1652,9 +1655,11 @@
 
             usersWithNoActivityDetails = await Http.GetFromJsonAsync<List<UserDetailsDto>>(url);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            errorMessage = $"Error loading user details: {ex.Message}";
+            // Don't set errorMessage here as it affects the main page
+            // Just ensure usersWithNoActivityDetails is empty
+            usersWithNoActivityDetails = new List<UserDetailsDto>();
         }
     }
 } 
