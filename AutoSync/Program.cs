@@ -42,8 +42,22 @@ namespace tVar.AutoSync
             int batchDays = config.GetValue<int?>("AutoSyncBatchDays") ?? 10;
             var syncSettings = config.GetSection("SyncSettings").Get<SyncSettings>() ?? new SyncSettings(); // Load SyncSettings
 
+            // Optional AutoSync overrides to enable/disable processing types without changing shared SyncSettings
+            var autoSyncOverrides = config.GetSection("AutoSync");
+            bool? processCommitsOverride = autoSyncOverrides.GetValue<bool?>("ProcessCommits");
+            bool? processPullRequestsOverride = autoSyncOverrides.GetValue<bool?>("ProcessPullRequests");
+            if (processCommitsOverride.HasValue)
+            {
+                syncSettings.SyncTargets.Commits = processCommitsOverride.Value;
+            }
+            if (processPullRequestsOverride.HasValue)
+            {
+                syncSettings.SyncTargets.PullRequests = processPullRequestsOverride.Value;
+            }
+
             Console.WriteLine($"Starting tVar.AutoSync with batch size: {batchDays} days");
             Console.WriteLine($"Sync Mode: {syncSettings.Mode}, Overwrite: {syncSettings.Overwrite}");
+            Console.WriteLine($"Targets → Commits: {syncSettings.SyncTargets.Commits}, PullRequests: {syncSettings.SyncTargets.PullRequests}, Repositories: {syncSettings.SyncTargets.Repositories}, Users: {syncSettings.SyncTargets.Users}");
 
             // Minimal logger for Integration services
             using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
@@ -62,6 +76,11 @@ namespace tVar.AutoSync
             var prService = new BitbucketPullRequestsService(apiClient, bitbucketConfig, prLogger, diffParser);
             var userService = new BitbucketUsersService(bitbucketConfig, apiClient, userLogger); // Instantiated BitbucketUsersService
 
+            // Cancellation support for graceful termination (SIGTERM/CTRL+C)
+            var cts = new System.Threading.CancellationTokenSource();
+            Console.CancelKeyPress += (s, e) => { e.Cancel = true; cts.Cancel(); };
+            AppDomain.CurrentDomain.ProcessExit += (_, __) => cts.Cancel();
+
             await using var connection = new SqlConnection(connectionString);
             await connection.OpenAsync();
 
@@ -77,6 +96,7 @@ namespace tVar.AutoSync
                 foreach (var workspace in workspaces)
                 {
                     Console.WriteLine($"Syncing users for workspace: {workspace}");
+                    cts.Token.ThrowIfCancellationRequested();
                     await userService.SyncUsersAsync(workspace);
                 }
             }
@@ -88,6 +108,7 @@ namespace tVar.AutoSync
                 foreach (var workspace in workspaces)
                 {
                     Console.WriteLine($"Syncing repositories for workspace: {workspace}");
+                    cts.Token.ThrowIfCancellationRequested();
                     await repoService.SyncRepositoriesAsync(workspace);
                 }
             }
@@ -135,13 +156,13 @@ namespace tVar.AutoSync
                         if (syncSettings.SyncTargets.Commits)
                         {
                             Console.WriteLine($"[Repo: {repo.Slug}] Syncing commits...");
-                            var (hasMoreCommits, commitCount) = await commitService.SyncCommitsAsync(repo.Workspace, repo.Slug, startDate, endDate);
+                            var (hasMoreCommits, commitCount) = await commitService.SyncCommitsAsync(repo.Workspace, repo.Slug, startDate, endDate, cts.Token);
                             totalCommitsSynced += commitCount;
                         }
                         if (syncSettings.SyncTargets.PullRequests)
                         {
                             Console.WriteLine($"[Repo: {repo.Slug}] Syncing pull requests...");
-                            var (hasMorePRs, prCommitCount) = await prService.SyncPullRequestsAsync(repo.Workspace, repo.Slug, startDate, endDate);
+                            var (hasMorePRs, prCommitCount) = await prService.SyncPullRequestsAsync(repo.Workspace, repo.Slug, startDate, endDate, cts.Token);
                             totalCommitsSynced += prCommitCount;
                         }
                         Console.WriteLine($"[Repo: {repo.Slug}] DELTA Batch complete. {totalCommitsSynced} commits synced.");
@@ -222,14 +243,15 @@ namespace tVar.AutoSync
                             if (syncSettings.SyncTargets.Commits)
                             {
                                 Console.WriteLine($"[Repo: {repo.Slug}] Syncing commits...");
-                                var (moreCommits, commitCount) = await commitService.SyncCommitsAsync(repo.Workspace, repo.Slug, startDate, endDate);
+                                cts.Token.ThrowIfCancellationRequested();
+                                var (moreCommits, commitCount) = await commitService.SyncCommitsAsync(repo.Workspace, repo.Slug, startDate, endDate, cts.Token);
                                 hasMoreCommits = moreCommits;
                                 totalCommitsSynced += commitCount;
                             }
                             if (syncSettings.SyncTargets.PullRequests)
                             {
                                 Console.WriteLine($"[Repo: {repo.Slug}] Syncing pull requests...");
-                                var (morePRs, prCommitCount) = await prService.SyncPullRequestsAsync(repo.Workspace, repo.Slug, startDate, endDate);
+                                var (morePRs, prCommitCount) = await prService.SyncPullRequestsAsync(repo.Workspace, repo.Slug, startDate, endDate, cts.Token);
                                 hasMorePRs = morePRs;
                                 totalCommitsSynced += prCommitCount;
                             }

@@ -23,10 +23,12 @@ namespace Integration.Commits
             string repoSlug,
             BitbucketApiClient apiClient,
             DiffParserService diffParser,
-            ILogger logger)
+            ILogger logger,
+            System.Threading.CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             // Fetch raw diff and parse it with file classification
-            var diffContent = await apiClient.GetCommitDiffAsync(workspace, repoSlug, commit.Hash);
+            var diffContent = await apiClient.GetCommitDiffAsync(workspace, repoSlug, commit.Hash, cancellationToken);
             var diffSummary = diffParser.ParseDiffWithClassification(diffContent);
             var (totalAdded, totalRemoved, codeAdded, codeRemoved) =
                 (diffSummary.TotalAdded, diffSummary.TotalRemoved, diffSummary.CodeAdded, diffSummary.CodeRemoved);
@@ -193,6 +195,7 @@ namespace Integration.Commits
             }
 
             // Insert file-level details
+            cancellationToken.ThrowIfCancellationRequested();
             await InsertCommitFilesAsync(connection, commitId, diffSummary.FileChanges, logger);
             return commitId;
         }

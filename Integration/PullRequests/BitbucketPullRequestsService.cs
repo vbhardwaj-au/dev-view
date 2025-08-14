@@ -31,7 +31,7 @@ namespace Integration.PullRequests
             _diffParser = diffParser;
         }
 
-        public async Task<(bool HasMoreHistory, int CommitCount)> SyncPullRequestsAsync(string workspace, string repoSlug, DateTime? startDate, DateTime? endDate)
+        public async Task<(bool HasMoreHistory, int CommitCount)> SyncPullRequestsAsync(string workspace, string repoSlug, DateTime? startDate, DateTime? endDate, System.Threading.CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Starting PR sync for {Workspace}/{RepoSlug} from {StartDate:yyyy-MM-dd} to {EndDate:yyyy-MM-dd}", workspace, repoSlug, startDate, endDate);
             
@@ -70,7 +70,8 @@ namespace Integration.PullRequests
                         _logger.LogInformation("Waiting for rate limit to reset ({WaitTime} seconds) before fetching pull requests...", waitTime?.TotalSeconds ?? 0);
                     }
                     
-                    var prsJson = await _apiClient.GetPullRequestsAsync(workspace, repoSlug, startDate, endDate, nextPageUrl);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var prsJson = await _apiClient.GetPullRequestsAsync(workspace, repoSlug, startDate, endDate, nextPageUrl, cancellationToken);
                     //_logger.LogInformation("Raw PRs JSON: {Json}", prsJson);
                     var prPagedResponse = JsonSerializer.Deserialize<PaginatedResponseDto<PullRequestDto>>(prsJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
@@ -141,7 +142,8 @@ namespace Integration.PullRequests
                             pr.Id, pr.Title, workspace, repoSlug, prDbId, isRevert);
 
                         // After inserting/updating the pull request and before syncing commits, fetch PR activity and extract approvals
-                        var activityJson = await _apiClient.GetPullRequestActivityAsync(workspace, repoSlug, pr.Id);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var activityJson = await _apiClient.GetPullRequestActivityAsync(workspace, repoSlug, pr.Id, cancellationToken);
                         var activityResponse = System.Text.Json.JsonSerializer.Deserialize<BitbucketPullRequestActivityResponse>(activityJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                         var approvalParticipants = new List<BitbucketPullRequestParticipantDto>();
                         if (activityResponse?.Values != null)
@@ -168,7 +170,7 @@ namespace Integration.PullRequests
                         }
 
                         // Now, sync commits for this PR
-                        var (commitsSyncedInThisBatch, _) = await SyncCommitsForPullRequest(connection, workspace, repoSlug, pr.Id, prDbId);
+                        var (commitsSyncedInThisBatch, _) = await SyncCommitsForPullRequest(connection, workspace, repoSlug, pr.Id, prDbId, cancellationToken);
                         totalCommitsSynced += commitsSyncedInThisBatch;
                     }
                     // Determine if we should keep fetching more pages
@@ -211,7 +213,7 @@ namespace Integration.PullRequests
             return title.IndexOf("revert", StringComparison.OrdinalIgnoreCase) >= 0;
         }
         
-        private async Task<(int CommitCount, int PullRequestCount)> SyncCommitsForPullRequest(SqlConnection connection, string workspace, string repoSlug, int bitbucketPrId, int prDbId)
+        private async Task<(int CommitCount, int PullRequestCount)> SyncCommitsForPullRequest(SqlConnection connection, string workspace, string repoSlug, int bitbucketPrId, int prDbId, System.Threading.CancellationToken cancellationToken = default)
         {
             int commitsSyncedInThisBatch = 0;
             try
@@ -225,7 +227,8 @@ namespace Integration.PullRequests
                         var waitTime = BitbucketApiClient.GetRateLimitWaitTime();
                     }
                     
-                    var commitsJson = await _apiClient.GetPullRequestCommitsAsync(workspace, repoSlug, bitbucketPrId, commitNextPageUrl);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var commitsJson = await _apiClient.GetPullRequestCommitsAsync(workspace, repoSlug, bitbucketPrId, commitNextPageUrl, cancellationToken);
                     var commitPagedResponse = JsonSerializer.Deserialize<PaginatedResponseDto<CommitDto>>(commitsJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
                     if (commitPagedResponse?.Values == null || !commitPagedResponse.Values.Any()) 

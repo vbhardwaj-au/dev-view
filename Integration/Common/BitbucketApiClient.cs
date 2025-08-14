@@ -32,7 +32,7 @@ namespace Integration.Common
             _httpClient = new HttpClient { BaseAddress = new Uri(_config.ApiBaseUrl) };
         }
 
-        private async Task EnsureAuthenticatedAsync()
+        private async Task EnsureAuthenticatedAsync(System.Threading.CancellationToken cancellationToken = default)
         {
             if (!string.IsNullOrEmpty(_accessToken)) return;
 
@@ -47,7 +47,7 @@ namespace Integration.Common
                 })
             };
 
-            var response = await authClient.SendAsync(request);
+            var response = await authClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var content = await response.Content.ReadAsStringAsync();
@@ -57,7 +57,7 @@ namespace Integration.Common
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
         }
 
-        private async Task WaitForRateLimitResetAsync()
+        private async Task WaitForRateLimitResetAsync(System.Threading.CancellationToken cancellationToken = default, TimeSpan? totalWait = null)
         {
             lock (_rateLimitLock)
             {
@@ -69,9 +69,14 @@ namespace Integration.Common
             }
             
             // Wait outside the lock to avoid blocking other threads
+            // Heartbeat-based wait loop
+            var heartbeatSeconds = Math.Max(1, _config.RateLimitHeartbeatSeconds ?? 10);
             while (DateTime.UtcNow < _globalRateLimitResetTime)
             {
-                await Task.Delay(1000); // Check every second
+                var remaining = _globalRateLimitResetTime - DateTime.UtcNow;
+                var chunk = TimeSpan.FromSeconds(Math.Min(heartbeatSeconds, Math.Max(1, remaining.TotalSeconds)));
+                Console.WriteLine($"[RateLimit] waiting {remaining.TotalSeconds:F0}s before next API call...");
+                await Task.Delay(chunk, cancellationToken);
             }
         }
         
@@ -108,12 +113,12 @@ namespace Integration.Common
             }
         }
 
-        private async Task<string> SendRequestAsync(string url)
+        private async Task<string> SendRequestAsync(string url, System.Threading.CancellationToken cancellationToken = default)
         {
-            await EnsureAuthenticatedAsync();
+            await EnsureAuthenticatedAsync(cancellationToken);
             
             // Wait if we're in a global rate limit period
-            await WaitForRateLimitResetAsync();
+            await WaitForRateLimitResetAsync(cancellationToken);
             
             int maxRetries = 3;
             int retryCount = 0;
@@ -124,7 +129,7 @@ namespace Integration.Common
             {
                 try
                 {
-                    var response = await _httpClient.GetAsync(url);
+                    var response = await _httpClient.GetAsync(url, cancellationToken);
                     if (response.IsSuccessStatusCode)
                     {
                         return await response.Content.ReadAsStringAsync();
@@ -138,8 +143,12 @@ namespace Integration.Common
                         }
                         else
                         {
-                            // Use exponential backoff with minimum 60 seconds for rate limits
-                            delay = TimeSpan.FromSeconds(Math.Max(60, Math.Pow(2, retryCount + 4)));
+                            // Exponential backoff seconds
+                            var computed = Math.Pow(2, retryCount + 4); // 16,32,64,...
+                            var minSeconds = 10; // minimum sane delay
+                            var capSeconds = _config.RateLimitMaxWaitSeconds ?? 55; // below common idle timeouts
+                            var seconds = Math.Max(minSeconds, Math.Min(capSeconds, computed));
+                            delay = TimeSpan.FromSeconds(seconds);
                         }
                         
                         // Set global rate limit to pause ALL API calls
@@ -148,7 +157,7 @@ namespace Integration.Common
                         Console.WriteLine($"Rate limit hit for URL: {url}. Global pause set for {delay.TotalSeconds} seconds...");
                         
                         // Wait for the global rate limit to reset
-                        await WaitForRateLimitResetAsync();
+                        await WaitForRateLimitResetAsync(cancellationToken, delay);
                         
                         retryCount++;
                     }
@@ -183,49 +192,49 @@ namespace Integration.Common
                     }
 
                     Console.WriteLine($"HTTP request failed for {url}: {ex.Message}. Retrying...");
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, retryCount)));
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, retryCount)), cancellationToken);
                     retryCount++;
                 }
             }
             throw new Exception($"Failed to send request to {url} after multiple retries."); // Should not be reached
         }
 
-        public async Task<string> GetCurrentUserAsync()
+        public async Task<string> GetCurrentUserAsync(System.Threading.CancellationToken cancellationToken = default)
         {
-            return await SendRequestAsync("user");
+            return await SendRequestAsync("user", cancellationToken);
         }
 
-        public async Task<string> GetWorkspaceUsersAsync(string workspace)
+        public async Task<string> GetWorkspaceUsersAsync(string workspace, System.Threading.CancellationToken cancellationToken = default)
         {
-            return await SendRequestAsync($"workspaces/{workspace}/members");
+            return await SendRequestAsync($"workspaces/{workspace}/members", cancellationToken);
         }
 
-        public async Task<string> GetWorkspaceRepositoriesAsync(string workspace)
+        public async Task<string> GetWorkspaceRepositoriesAsync(string workspace, System.Threading.CancellationToken cancellationToken = default)
         {
-            return await SendRequestAsync($"repositories/{workspace}");
+            return await SendRequestAsync($"repositories/{workspace}", cancellationToken);
         }
 
-        public async Task<string> GetUsersAsync(string workspace, string nextPageUrl = null)
+        public async Task<string> GetUsersAsync(string workspace, string nextPageUrl = null, System.Threading.CancellationToken cancellationToken = default)
         {
             var url = !string.IsNullOrEmpty(nextPageUrl) ? nextPageUrl : $"workspaces/{workspace}/members";
-            return await SendRequestAsync(url);
+            return await SendRequestAsync(url, cancellationToken);
         }
 
-        public async Task<string> GetRepositoriesAsync(string workspace, string nextPageUrl = null)
+        public async Task<string> GetRepositoriesAsync(string workspace, string nextPageUrl = null, System.Threading.CancellationToken cancellationToken = default)
         {
             var url = !string.IsNullOrEmpty(nextPageUrl) ? nextPageUrl : $"repositories/{workspace}";
-            return await SendRequestAsync(url);
+            return await SendRequestAsync(url, cancellationToken);
         }
         
-        public async Task<string> GetCommitsAsync(string workspace, string repoSlug, string nextPageUrl = null)
+        public async Task<string> GetCommitsAsync(string workspace, string repoSlug, string nextPageUrl = null, System.Threading.CancellationToken cancellationToken = default)
         {
             var url = !string.IsNullOrEmpty(nextPageUrl) 
                 ? nextPageUrl 
                 : $"repositories/{workspace}/{repoSlug}/commits";
-            return await SendRequestAsync(url);
+            return await SendRequestAsync(url, cancellationToken);
         }
         
-        public async Task<string> GetPullRequestsAsync(string workspace, string repoSlug, DateTime? startDate, DateTime? endDate, string nextPageUrl = null)
+        public async Task<string> GetPullRequestsAsync(string workspace, string repoSlug, DateTime? startDate, DateTime? endDate, string nextPageUrl = null, System.Threading.CancellationToken cancellationToken = default)
         {
             var url = nextPageUrl;
             if (string.IsNullOrEmpty(url))
@@ -240,27 +249,27 @@ namespace Integration.Common
                      url = $"repositories/{workspace}/{repoSlug}/pullrequests";
                 }
             }
-            return await SendRequestAsync(url);
+            return await SendRequestAsync(url, cancellationToken);
         }
 
-        public async Task<string> GetPullRequestCommitsAsync(string workspace, string repoSlug, int pullRequestId, string nextPageUrl = null)
+        public async Task<string> GetPullRequestCommitsAsync(string workspace, string repoSlug, int pullRequestId, string nextPageUrl = null, System.Threading.CancellationToken cancellationToken = default)
         {
             var url = !string.IsNullOrEmpty(nextPageUrl)
                 ? nextPageUrl
                 : $"repositories/{workspace}/{repoSlug}/pullrequests/{pullRequestId}/commits";
-            return await SendRequestAsync(url);
+            return await SendRequestAsync(url, cancellationToken);
         }
         
-        public async Task<string> GetCommitDiffAsync(string workspace, string repoSlug, string commitHash)
+        public async Task<string> GetCommitDiffAsync(string workspace, string repoSlug, string commitHash, System.Threading.CancellationToken cancellationToken = default)
         {
             var url = $"repositories/{workspace}/{repoSlug}/diff/{commitHash}";
-            return await SendRequestAsync(url);
+            return await SendRequestAsync(url, cancellationToken);
         }
 
-        public async Task<string> GetPullRequestActivityAsync(string workspace, string repoSlug, int pullRequestId)
+        public async Task<string> GetPullRequestActivityAsync(string workspace, string repoSlug, int pullRequestId, System.Threading.CancellationToken cancellationToken = default)
         {
             var url = $"repositories/{workspace}/{repoSlug}/pullrequests/{pullRequestId}/activity";
-            return await SendRequestAsync(url);
+            return await SendRequestAsync(url, cancellationToken);
         }
 
         private string BuildPullRequestsUrl(string workspace, string repoSlug, DateTime? startDate, DateTime? endDate)

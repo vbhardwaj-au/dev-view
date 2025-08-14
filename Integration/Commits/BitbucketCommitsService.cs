@@ -30,7 +30,7 @@ namespace Integration.Commits
             _logger = logger;
         }
 
-        public async Task<(bool HasMoreHistory, int CommitCount)> SyncCommitsAsync(string workspace, string repoSlug, DateTime startDate, DateTime endDate)
+        public async Task<(bool HasMoreHistory, int CommitCount)> SyncCommitsAsync(string workspace, string repoSlug, DateTime startDate, DateTime endDate, System.Threading.CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Starting commit sync for {Workspace}/{RepoSlug} from {StartDate:yyyy-MM-dd} to {EndDate:yyyy-MM-dd}", workspace, repoSlug, startDate, endDate);
             
@@ -71,7 +71,8 @@ namespace Integration.Commits
                         _logger.LogInformation("Waiting for rate limit to reset ({WaitTime} seconds) before fetching commits...", waitTime?.TotalSeconds ?? 0);
                     }
                     
-                    var commitsJson = await _apiClient.GetCommitsAsync(workspace, repoSlug, nextPageUrl);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var commitsJson = await _apiClient.GetCommitsAsync(workspace, repoSlug, nextPageUrl, cancellationToken);
                     var pagedResponse = JsonSerializer.Deserialize<PaginatedResponseDto<CommitDto>>(commitsJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
                     if (pagedResponse?.Values == null || !pagedResponse.Values.Any()) {
@@ -114,8 +115,9 @@ namespace Integration.Commits
                             _logger.LogInformation("Waiting for rate limit to reset ({WaitTime} seconds) before fetching diff for commit {CommitHash}...", waitTime?.TotalSeconds ?? 0, commit.Hash);
                         }
                         
+                        cancellationToken.ThrowIfCancellationRequested();
                         // Fetch raw diff and parse it with file classification
-                        var diffContent = await _apiClient.GetCommitDiffAsync(workspace, repoSlug, commit.Hash);
+                        var diffContent = await _apiClient.GetCommitDiffAsync(workspace, repoSlug, commit.Hash, cancellationToken);
                         var diffSummary = _diffParser.ParseDiffWithClassification(diffContent);
                         
                         // Extract values for backward compatibility
@@ -136,7 +138,8 @@ namespace Integration.Commits
                             repoSlug,
                             _apiClient,
                             _diffParser,
-                            _logger
+                            _logger,
+                            cancellationToken
                         );
                         if (commitId < 0) continue;
                         
