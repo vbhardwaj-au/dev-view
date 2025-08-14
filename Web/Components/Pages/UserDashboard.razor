@@ -82,6 +82,24 @@
     .kpi-card .bi {
         font-size: 1.5rem !important;
     }
+
+    /* KPI Drill-down Button Styling */
+    .kpi-drill-down-btn {
+        opacity: 0.7;
+        transition: all 0.2s ease;
+        border-radius: 4px;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .kpi-drill-down-btn:hover {
+        opacity: 1;
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    
+    .kpi-card:hover .kpi-drill-down-btn {
+        opacity: 1;
+    }
     
     @@media (max-width: 768px) {
         .filter-container {
@@ -610,8 +628,15 @@
                 <div class="card-body">
                     <div class="kpi-header">
                         <h5 class="kpi-title">Users with No Activity</h5>
-                        <div class="kpi-icon warning">
-                            <i class="bi bi-person-slash-fill"></i>
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-outline-secondary btn-sm kpi-drill-down-btn" 
+                                    @onclick="() => ShowUsersWithNoActivityModal()" 
+                                    title="View Details">
+                                <i class="bi bi-table"></i>
+                            </button>
+                            <div class="kpi-icon warning">
+                                <i class="bi bi-person-slash-fill"></i>
+                            </div>
                         </div>
                     </div>
                     <div class="kpi-value-section">
@@ -842,6 +867,117 @@
 }
 </div>
 
+<!-- Modal: Users with No Activity Details -->
+@if (showUsersWithNoActivityModal)
+{
+    <div class="modal show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-person-slash-fill text-warning me-2"></i>
+                        Users with No Activity - Details
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseUsersWithNoActivityModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoadingUsersWithNoActivityDetails)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading user details...</p>
+                        </div>
+                    }
+                    else if (usersWithNoActivityDetails != null && usersWithNoActivityDetails.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Last Activity Date</th>
+                                        <th>Last Activity Type</th>
+                                        <th>Days Since Activity</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var user in usersWithNoActivityDetails)
+                                    {
+                                        var statusClass = user.DaysSinceLastActivity <= 7 ? "bg-success" : 
+                                                         user.DaysSinceLastActivity <= 30 ? "bg-warning" : "bg-danger";
+                                        var statusText = user.DaysSinceLastActivity <= 7 ? "Recent" : 
+                                                        user.DaysSinceLastActivity <= 30 ? "Inactive" : "Dormant";
+                                        
+                                        <tr>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    @if (!string.IsNullOrEmpty(user.AvatarUrl))
+                                                    {
+                                                        <img src="@user.AvatarUrl" alt="@user.DisplayName" class="rounded-circle me-2" style="width: 32px; height: 32px;">
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="bg-secondary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                                            <i class="bi bi-person text-white"></i>
+                                                        </div>
+                                                    }
+                                                    @user.DisplayName
+                                                </div>
+                                            </td>
+                                            <td>
+                                                @if (user.LastActivityDate.HasValue)
+                                                {
+                                                    @user.LastActivityDate.Value.ToString("yyyy-MM-dd HH:mm")
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">Never</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <span class="badge @(user.ActivityType switch {
+                                                    "commit" => "bg-primary",
+                                                    "pr_created" => "bg-info", 
+                                                    "pr_approved" => "bg-success",
+                                                    _ => "bg-secondary"
+                                                })">
+                                                    @(user.ActivityType switch {
+                                                        "commit" => "Commit",
+                                                        "pr_created" => "PR Created", 
+                                                        "pr_approved" => "PR Approved",
+                                                        _ => "No Activity"
+                                                    })
+                                                </span>
+                                            </td>
+                                            <td>@user.DaysSinceLastActivity days</td>
+                                            <td>
+                                                <span class="badge @statusClass">@statusText</span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-people-fill text-success" style="font-size: 3rem;"></i>
+                            <p class="mt-2">All users have been active during the selected period!</p>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseUsersWithNoActivityModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private UserDashboardResponseDto? dashboardData;
     private bool isLoading = true;
@@ -876,6 +1012,11 @@
     // Sorting variables for contributors table
     private string contributorSortBy = "net";
     private bool contributorSortDescending = true;
+
+    // Modal state variables
+    private bool showUsersWithNoActivityModal = false;
+    private bool isLoadingUsersWithNoActivityDetails = false;
+    private List<UserDetailsDto>? usersWithNoActivityDetails;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1441,5 +1582,79 @@
         }
 
         return query.ToList();
+    }
+
+    // Modal Methods
+    private async Task ShowUsersWithNoActivityModal()
+    {
+        showUsersWithNoActivityModal = true;
+        isLoadingUsersWithNoActivityDetails = true;
+        StateHasChanged();
+        
+        try
+        {
+            await LoadUsersWithNoActivityDetails();
+        }
+        finally
+        {
+            isLoadingUsersWithNoActivityDetails = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseUsersWithNoActivityModal()
+    {
+        showUsersWithNoActivityModal = false;
+        usersWithNoActivityDetails = null;
+    }
+
+    private async Task LoadUsersWithNoActivityDetails()
+    {
+        try
+        {
+            if (!WorkspaceService.HasSelectedWorkspace)
+            {
+                errorMessage = "No workspace selected.";
+                return;
+            }
+
+            var url = $"api/userdashboard/users-with-no-activity-details?workspace={WorkspaceService.SelectedWorkspace}";
+            
+            // Add date filters only if they have values (handle "All Time" scenario)
+            if (startDate.HasValue)
+            {
+                url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            }
+            if (endDate.HasValue)
+            {
+                url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            }
+            
+            // Add repository filter if specific repo is selected
+            if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "all")
+            {
+                url += $"&repoSlug={selectedRepoSlug}";
+            }
+            
+            // Add user or team filter based on filter type
+            if (filterType == "user" && selectedUserId.HasValue)
+            {
+                url += $"&userId={selectedUserId.Value}";
+            }
+            else if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value > 0)
+            {
+                url += $"&teamId={selectedTeamId.Value}";
+            }
+
+            // Add filter parameters
+            url += $"&includePR={includePR.ToString().ToLower()}";
+            url += $"&showExcluded={showExcluded.ToString().ToLower()}";
+
+            usersWithNoActivityDetails = await Http.GetFromJsonAsync<List<UserDetailsDto>>(url);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading user details: {ex.Message}";
+        }
     }
 } 

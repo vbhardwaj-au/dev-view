@@ -523,5 +523,149 @@ namespace API.Endpoints.Analytics
                 MergedPrsByWeekday = mergedPrs.ToList()
             };
         }
+
+        [HttpGet("users-with-no-activity-details")]
+        public async Task<IActionResult> GetUsersWithNoActivityDetails(
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            string? repoSlug = null,
+            string? workspace = null,
+            int? userId = null,
+            int? teamId = null,
+            bool includePR = false,
+            bool showExcluded = false)
+        {
+            try
+            {
+                // Handle date ranges (same logic as main endpoint)
+                if (!startDate.HasValue && !endDate.HasValue)
+                {
+                    using var tempConnection = new SqlConnection(_connectionString);
+                    await tempConnection.OpenAsync();
+                    
+                    startDate = await tempConnection.QuerySingleOrDefaultAsync<DateTime?>(
+                        "SELECT MIN(Date) FROM Commits c JOIN Repositories r ON c.RepositoryId = r.Id WHERE (@workspace IS NULL OR r.Workspace = @workspace)",
+                        new { workspace }) ?? DateTime.Today.AddYears(-10);
+                        
+                    endDate = DateTime.Today;
+                }
+                else if (!startDate.HasValue || !endDate.HasValue)
+                {
+                    using var tempConnection = new SqlConnection(_connectionString);
+                    await tempConnection.OpenAsync();
+                    
+                    if (!startDate.HasValue)
+                    {
+                        startDate = await tempConnection.QuerySingleOrDefaultAsync<DateTime?>(
+                            "SELECT MIN(Date) FROM Commits c JOIN Repositories r ON c.RepositoryId = r.Id WHERE (@workspace IS NULL OR r.Workspace = @workspace)",
+                            new { workspace }) ?? DateTime.Today.AddYears(-10);
+                    }
+                    
+                    if (!endDate.HasValue)
+                    {
+                        endDate = DateTime.Today;
+                    }
+                }
+
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Get users with no activity in the period
+                var usersWithNoActivity = await GetUsersWithNoActivityDetails(connection, startDate.Value, endDate.Value, repoSlug, workspace, userId, teamId, includePR, showExcluded);
+
+                return Ok(usersWithNoActivity);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting users with no activity details");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        private async Task<List<UserDetailsDto>> GetUsersWithNoActivityDetails(SqlConnection connection, DateTime periodStartDate, DateTime periodEndDate, string? repoSlug, string? workspace, int? userId, int? teamId, bool includePR, bool showExcluded)
+        {
+            // If filtering by team, we need to get team members only
+            var teamFilter = (teamId.HasValue && teamId.Value > 0) ? " AND u.Id IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId)" : "";
+            var teamFilterCommits = (teamId.HasValue && teamId.Value > 0) ? " AND c.AuthorId IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId)" : "";
+            var teamFilterPr = (teamId.HasValue && teamId.Value > 0) ? " AND pr.AuthorId IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId)" : "";
+            var teamFilterApproval = (teamId.HasValue && teamId.Value > 0) ? " AND u.Id IN (SELECT UserId FROM TeamMembers WHERE TeamId = @teamId)" : "";
+
+            // Get all users (or team members if filtering by team) with their last activity
+            var sql = $@"
+                WITH UserActivity AS (
+                    -- Commits
+                    SELECT c.AuthorId AS UserId, 
+                           MAX(c.Date) AS LastActivityDate,
+                           'commit' AS ActivityType
+                    FROM Commits c 
+                    JOIN Repositories r ON c.RepositoryId = r.Id
+                    WHERE c.IsRevert = 0
+                    {(!string.IsNullOrEmpty(workspace) ? " AND r.Workspace = @workspace" : "")}
+                    {(!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase) ? " AND r.Slug = @repoSlug" : "")}
+                    {teamFilterCommits}
+                    GROUP BY c.AuthorId
+                    
+                    UNION ALL
+                    
+                    -- PRs Created
+                    SELECT pr.AuthorId AS UserId, 
+                           MAX(pr.CreatedOn) AS LastActivityDate,
+                           'pr_created' AS ActivityType
+                    FROM PullRequests pr 
+                    JOIN Repositories r ON pr.RepositoryId = r.Id
+                    WHERE 1=1
+                    {(!string.IsNullOrEmpty(workspace) ? " AND r.Workspace = @workspace" : "")}
+                    {(!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase) ? " AND r.Slug = @repoSlug" : "")}
+                    {teamFilterPr}
+                    GROUP BY pr.AuthorId
+                    
+                    UNION ALL
+                    
+                    -- PRs Approved
+                    SELECT u.Id AS UserId,
+                           MAX(pra.ApprovedOn) AS LastActivityDate,
+                           'pr_approved' AS ActivityType
+                    FROM PullRequestApprovals pra
+                    JOIN PullRequests pr ON pra.PullRequestId = pr.Id
+                    JOIN Users u ON pra.UserUuid = u.BitbucketUserId
+                    JOIN Repositories r ON pr.RepositoryId = r.Id
+                    WHERE pra.Approved = 1 AND pra.ApprovedOn IS NOT NULL
+                    {(!string.IsNullOrEmpty(workspace) ? " AND r.Workspace = @workspace" : "")}
+                    {(!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase) ? " AND r.Slug = @repoSlug" : "")}
+                    {teamFilterApproval}
+                    GROUP BY u.Id
+                ),
+                UserLastActivity AS (
+                    SELECT UserId,
+                           MAX(LastActivityDate) AS LastActivityDate,
+                           FIRST_VALUE(ActivityType) OVER (PARTITION BY UserId ORDER BY LastActivityDate DESC) AS ActivityType
+                    FROM UserActivity
+                    GROUP BY UserId, ActivityType
+                ),
+                FinalUserActivity AS (
+                    SELECT UserId,
+                           MAX(LastActivityDate) AS LastActivityDate,
+                           FIRST_VALUE(ActivityType) OVER (PARTITION BY UserId ORDER BY LastActivityDate DESC) AS ActivityType
+                    FROM UserLastActivity
+                    GROUP BY UserId
+                )
+                SELECT u.Id, 
+                       u.DisplayName, 
+                       u.AvatarUrl,
+                       COALESCE(ua.LastActivityDate, u.CreatedOn) AS LastActivityDate,
+                       COALESCE(ua.ActivityType, 'none') AS ActivityType,
+                       DATEDIFF(DAY, COALESCE(ua.LastActivityDate, u.CreatedOn), GETUTCDATE()) AS DaysSinceLastActivity
+                FROM Users u
+                LEFT JOIN FinalUserActivity ua ON u.Id = ua.UserId
+                WHERE (ua.LastActivityDate IS NULL OR ua.LastActivityDate < @periodStartDate)
+                {teamFilter}
+                ORDER BY DaysSinceLastActivity DESC, u.DisplayName";
+
+            var results = await connection.QueryAsync<UserDetailsDto>(sql, new { 
+                periodStartDate, periodEndDate, repoSlug, workspace, teamId 
+            });
+
+            return results.ToList();
+        }
     }
 } 

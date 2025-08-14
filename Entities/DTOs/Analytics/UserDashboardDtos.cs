@@ -75,4 +75,15 @@ namespace Entities.DTOs.Analytics
         public string DayOfWeek { get; set; } = string.Empty;
         public int PrCount { get; set; }
     }
+
+    // DTO for user details modal data
+    public class UserDetailsDto
+    {
+        public int Id { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public string? AvatarUrl { get; set; }
+        public DateTime? LastActivityDate { get; set; }
+        public string ActivityType { get; set; } = string.Empty; // "commit", "pr_created", "pr_approved", "none"
+        public int DaysSinceLastActivity { get; set; }
+    }
 } 

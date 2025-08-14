@@ -39,32 +39,34 @@
     }
     else
     {
-        <CommitsFilter 
-            IsLoadingRepos="@isLoadingRepos"
-            Repositories="@repositories"
-            SelectedRepoSlug="@selectedRepoSlug"
-            IsLoadingUsers="@isLoadingUsers"
-            Users="@users"
-            SelectedUserId="@selectedUserId"
-            IsLoadingTeams="@isLoadingTeams"
-            Teams="@teams"
-            SelectedTeamId="@selectedTeamId"
-            FilterType="@filterType"
-            StartDate="@startDate"
-            EndDate="@endDate"
-            IncludePR="false"
-            IncludeData="false"
-            IncludeConfig="false"
-            ShowGrouping="false"
-            ShowContentFilters="false"
-            ShowExcluded="false"
-            OnRepositorySelected="OnRepositorySelected"
-            OnUserSelected="OnUserSelected"
-            OnTeamSelected="OnTeamSelected"
-            OnFilterTypeChanged="OnFilterTypeChanged"
-            OnDateRangeUpdated="OnDateRangeUpdated"
-            OnFiltersChanged="OnFiltersChanged"
-            OnSearchButtonClicked="OnSearchButtonClicked" />
+        <div class="mb-4">
+            <CommitsFilter 
+                IsLoadingRepos="@isLoadingRepos"
+                Repositories="@repositories"
+                SelectedRepoSlug="@selectedRepoSlug"
+                IsLoadingUsers="@isLoadingUsers"
+                Users="@users"
+                SelectedUserId="@selectedUserId"
+                IsLoadingTeams="@isLoadingTeams"
+                Teams="@teams"
+                SelectedTeamId="@selectedTeamId"
+                FilterType="@filterType"
+                StartDate="@startDate"
+                EndDate="@endDate"
+                IncludePR="false"
+                IncludeData="false"
+                IncludeConfig="false"
+                ShowGrouping="false"
+                ShowContentFilters="false"
+                ShowExcluded="false"
+                OnRepositorySelected="OnRepositorySelected"
+                OnUserSelected="OnUserSelected"
+                OnTeamSelected="OnTeamSelected"
+                OnFilterTypeChanged="OnFilterTypeChanged"
+                OnDateRangeUpdated="OnDateRangeUpdated"
+                OnFiltersChanged="OnFiltersChanged"
+                OnSearchButtonClicked="OnSearchButtonClicked" />
+        </div>
 
         @if (!string.IsNullOrEmpty(errorMessage))
         {
