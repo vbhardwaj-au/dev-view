@@ -242,15 +242,20 @@ namespace API.Endpoints.Analytics
                 $"SELECT COUNT(*) FROM PullRequests pr JOIN Repositories r ON pr.RepositoryId = r.Id {mergedPrWhereClause}",
                 new { periodStartDate, periodEndDate, repoSlug, workspace, userId, teamId });
 
-            // PRs Approved - Count unique PRs that were approved in this period
+            // PRs Approved - Count unique PRs that were approved AND merged in this period
+            // This ensures we count meaningful approvals that led to actual PR completion
             var prsApprovedSql = $@"
-                SELECT COUNT(DISTINCT pra.PullRequestId)
-                FROM PullRequestApprovals pra
-                JOIN PullRequests pr ON pra.PullRequestId = pr.Id
+                SELECT COUNT(DISTINCT pr.Id)
+                FROM PullRequests pr
                 JOIN Repositories r ON pr.RepositoryId = r.Id
-                WHERE pra.ApprovedOn >= @periodStartDate 
-                    AND pra.ApprovedOn <= @periodEndDate 
-                    AND pra.Approved = 1
+                WHERE pr.State = 'MERGED'
+                    AND pr.MergedOn >= @periodStartDate 
+                    AND pr.MergedOn <= @periodEndDate
+                    AND EXISTS (
+                        SELECT 1 FROM PullRequestApprovals pra 
+                        WHERE pra.PullRequestId = pr.Id 
+                        AND pra.Approved = 1
+                    )
                     {(!string.IsNullOrEmpty(workspace) ? " AND r.Workspace = @workspace" : "")}
                     {(!string.IsNullOrEmpty(repoSlug) && !string.Equals(repoSlug, "all", StringComparison.OrdinalIgnoreCase) ? " AND r.Slug = @repoSlug" : "")}";
             
@@ -258,16 +263,20 @@ namespace API.Endpoints.Analytics
             if (userId.HasValue)
             {
                 prsApprovedSql += @" AND EXISTS (
-                    SELECT 1 FROM Users u 
-                    WHERE u.BitbucketUserId = pra.UserUuid 
+                    SELECT 1 FROM PullRequestApprovals pra2
+                    JOIN Users u ON pra2.UserUuid = u.BitbucketUserId 
+                    WHERE pra2.PullRequestId = pr.Id 
+                    AND pra2.Approved = 1
                     AND u.Id = @userId)";
             }
             else if (teamId.HasValue && teamId.Value > 0)
             {
                 prsApprovedSql += @" AND EXISTS (
-                    SELECT 1 FROM Users u 
+                    SELECT 1 FROM PullRequestApprovals pra2
+                    JOIN Users u ON pra2.UserUuid = u.BitbucketUserId 
                     JOIN TeamMembers tm ON u.Id = tm.UserId 
-                    WHERE u.BitbucketUserId = pra.UserUuid 
+                    WHERE pra2.PullRequestId = pr.Id 
+                    AND pra2.Approved = 1
                     AND tm.TeamId = @teamId)";
             }
             
