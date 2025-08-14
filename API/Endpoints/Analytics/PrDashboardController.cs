@@ -460,5 +460,175 @@ namespace API.Endpoints.Analytics
             var balance = Math.Max(0, 100 - (coefficientOfVariation * 100));
             return (decimal)Math.Min(100, balance);
         }
+
+        // Drill-down API endpoints for modal data
+        [HttpGet("prs-merged-without-approval-details")]
+        public async Task<IActionResult> GetPrsMergedWithoutApprovalDetails(
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            string? repoSlug = null,
+            string? workspace = null,
+            int? userId = null,
+            int? teamId = null)
+        {
+            try
+            {
+                // Handle date ranges (same logic as main endpoint)
+                if (!startDate.HasValue && !endDate.HasValue)
+                {
+                    endDate = DateTime.Today;
+                    startDate = endDate.Value.AddDays(-30);
+                }
+                else if (!startDate.HasValue)
+                {
+                    startDate = endDate!.Value.AddDays(-30);
+                }
+                else if (!endDate.HasValue)
+                {
+                    endDate = DateTime.Today;
+                }
+
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var whereConditions = BuildWhereConditions(repoSlug, workspace, userId, teamId);
+                var whereClause = whereConditions.Any() ? "AND " + string.Join(" AND ", whereConditions) : "";
+
+                var sql = $@"
+                    SELECT DISTINCT pr.Id, pr.Title, r.Name as RepositoryName, u.DisplayName as AuthorName, 
+                           pr.CreatedOn, pr.MergedOn, pr.State,
+                           CONCAT('https://bitbucket.org/', r.Workspace, '/', r.Slug, '/pull-requests/', pr.SourceBranchId) as Url
+                    FROM PullRequests pr
+                    JOIN Repositories r ON pr.RepositoryId = r.Id
+                    JOIN Users u ON pr.AuthorId = u.Id
+                    WHERE pr.State = 'MERGED'
+                        AND pr.MergedOn >= @startDate 
+                        AND pr.MergedOn <= @endDate
+                        AND NOT EXISTS (
+                            SELECT 1 FROM PullRequestApprovals pra 
+                            WHERE pra.PullRequestId = pr.Id 
+                            AND pra.Approved = 1
+                        )
+                        {whereClause}
+                    ORDER BY pr.MergedOn DESC";
+
+                var results = await connection.QueryAsync<PrDetailsDto>(sql, new { 
+                    startDate, endDate, repoSlug, workspace, userId, teamId 
+                });
+
+                return Ok(results.ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting PRs merged without approval details");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("repositories-with-bypasses-details")]
+        public async Task<IActionResult> GetRepositoriesWithBypassesDetails(
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            string? repoSlug = null,
+            string? workspace = null,
+            int? userId = null,
+            int? teamId = null)
+        {
+            try
+            {
+                // Handle date ranges
+                if (!startDate.HasValue && !endDate.HasValue)
+                {
+                    endDate = DateTime.Today;
+                    startDate = endDate.Value.AddDays(-30);
+                }
+                else if (!startDate.HasValue)
+                {
+                    startDate = endDate!.Value.AddDays(-30);
+                }
+                else if (!endDate.HasValue)
+                {
+                    endDate = DateTime.Today;
+                }
+
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var whereConditions = BuildWhereConditions(repoSlug, workspace, userId, teamId);
+                var whereClause = whereConditions.Any() ? "AND " + string.Join(" AND ", whereConditions) : "";
+
+                var sql = $@"
+                    SELECT r.Name as RepositoryName,
+                           COUNT(DISTINCT pr.Id) as BypassCount,
+                           MAX(pr.MergedOn) as LatestBypassDate
+                    FROM PullRequests pr
+                    JOIN Repositories r ON pr.RepositoryId = r.Id
+                    WHERE pr.State = 'MERGED'
+                        AND pr.MergedOn >= @startDate 
+                        AND pr.MergedOn <= @endDate
+                        AND NOT EXISTS (
+                            SELECT 1 FROM PullRequestApprovals pra 
+                            WHERE pra.PullRequestId = pr.Id 
+                            AND pra.Approved = 1
+                        )
+                        {whereClause}
+                    GROUP BY r.Name
+                    HAVING COUNT(DISTINCT pr.Id) > 0
+                    ORDER BY BypassCount DESC, LatestBypassDate DESC";
+
+                var results = await connection.QueryAsync<RepositoryBypassDetailsDto>(sql, new { 
+                    startDate, endDate, repoSlug, workspace, userId, teamId 
+                });
+
+                return Ok(results.ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting repositories with bypasses details");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("active-vs-stale-prs-details")]
+        public async Task<IActionResult> GetActiveVsStalePrsDetails(
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            string? repoSlug = null,
+            string? workspace = null,
+            int? userId = null,
+            int? teamId = null)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var whereConditions = BuildWhereConditions(repoSlug, workspace, userId, teamId);
+                var whereClause = whereConditions.Any() ? "AND " + string.Join(" AND ", whereConditions) : "";
+
+                var sql = $@"
+                    SELECT pr.Id, pr.Title, r.Name as RepositoryName, u.DisplayName as AuthorName, 
+                           pr.CreatedOn, pr.State,
+                           CONCAT('https://bitbucket.org/', r.Workspace, '/', r.Slug, '/pull-requests/', pr.SourceBranchId) as Url,
+                           (SELECT COUNT(*) FROM PullRequestApprovals pra WHERE pra.PullRequestId = pr.Id AND pra.Approved = 1) as ApprovalCount
+                    FROM PullRequests pr
+                    JOIN Repositories r ON pr.RepositoryId = r.Id
+                    JOIN Users u ON pr.AuthorId = u.Id
+                    WHERE pr.State = 'OPEN'
+                        {whereClause}
+                    ORDER BY pr.CreatedOn ASC";
+
+                var results = await connection.QueryAsync<PrDetailsDto>(sql, new { 
+                    startDate, endDate, repoSlug, workspace, userId, teamId 
+                });
+
+                return Ok(results.ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting active vs stale PRs details");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
     }
 }

@@ -70,4 +70,26 @@ namespace Entities.DTOs.Analytics
         public int ReviewCount { get; set; }
         public int ApprovalCount { get; set; }
     }
+
+    // DTOs for modal drill-down data
+    public class PrDetailsDto
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string RepositoryName { get; set; } = string.Empty;
+        public string AuthorName { get; set; } = string.Empty;
+        public DateTime CreatedOn { get; set; }
+        public DateTime? MergedOn { get; set; }
+        public string State { get; set; } = string.Empty;
+        public string? Url { get; set; }
+        public int ApprovalCount { get; set; }
+    }
+
+    public class RepositoryBypassDetailsDto
+    {
+        public string RepositoryName { get; set; } = string.Empty;
+        public int BypassCount { get; set; }
+        public DateTime? LatestBypassDate { get; set; }
+        public List<string> RecentBypassAuthors { get; set; } = new();
+    }
 }

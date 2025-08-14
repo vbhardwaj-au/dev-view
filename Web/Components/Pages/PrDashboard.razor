@@ -97,7 +97,14 @@
                     <div class="card-body">
                         <div class="card-header-icon">
                             <h5 class="card-title text-danger">PRs Merged Without Approval</h5>
-                            <i class="bi bi-shield-x-fill bi-icon icon-negative"></i>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn btn-outline-secondary btn-sm kpi-drill-down-btn" 
+                                        @onclick="() => ShowPrsMergedWithoutApprovalModal()" 
+                                        title="View Details">
+                                    <i class="bi bi-table"></i>
+                                </button>
+                                <i class="bi bi-shield-x-fill bi-icon icon-negative"></i>
+                            </div>
                         </div>
                         <div class="metric-value-container">
                             <span class="value-negative">@(prsMergedWithoutApproval ?? 0)</span>
@@ -123,7 +130,14 @@
                     <div class="card-body">
                         <div class="card-header-icon">
                             <h5 class="card-title @(reposWithApprovalBypasses > 0 ? "text-danger" : "text-success")">Repositories with Bypasses</h5>
-                            <i class="bi @(reposWithApprovalBypasses > 0 ? "bi-building-exclamation" : "bi-building-check") bi-icon @(reposWithApprovalBypasses > 0 ? "icon-negative" : "icon-positive")"></i>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn btn-outline-secondary btn-sm kpi-drill-down-btn" 
+                                        @onclick="() => ShowRepositoriesWithBypassesModal()" 
+                                        title="View Details">
+                                    <i class="bi bi-table"></i>
+                                </button>
+                                <i class="bi @(reposWithApprovalBypasses > 0 ? "bi-building-exclamation" : "bi-building-check") bi-icon @(reposWithApprovalBypasses > 0 ? "icon-negative" : "icon-positive")"></i>
+                            </div>
                         </div>
                         <div class="metric-value-container">
                             <span class="@(reposWithApprovalBypasses > 0 ? "value-negative" : "value-positive")">@(reposWithApprovalBypasses ?? 0)</span>
@@ -267,7 +281,14 @@
                     <div class="card-body">
                         <div class="card-header-icon">
                             <h5 class="card-title @GetActiveStaleTextClass()">Active vs Stale PRs</h5>
-                            <i class="bi bi-hourglass-split bi-icon @GetActiveStaleIconClass()"></i>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn btn-outline-secondary btn-sm kpi-drill-down-btn" 
+                                        @onclick="() => ShowActiveVsStalePrsModal()" 
+                                        title="View Details">
+                                    <i class="bi bi-table"></i>
+                                </button>
+                                <i class="bi bi-hourglass-split bi-icon @GetActiveStaleIconClass()"></i>
+                            </div>
                         </div>
                         <div class="metric-breakdown">
                             <div class="d-flex justify-content-between mb-1">
@@ -451,6 +472,235 @@
     }
 </div>
 
+<!-- Modal: PRs Merged Without Approval Details -->
+@if (showPrsMergedWithoutApprovalModal)
+{
+    <div class="modal show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-shield-x-fill text-danger me-2"></i>
+                        PRs Merged Without Approval - Details
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="ClosePrsMergedWithoutApprovalModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoadingPrsMergedWithoutApprovalDetails)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading PR details...</p>
+                        </div>
+                    }
+                    else if (prsMergedWithoutApprovalDetails != null && prsMergedWithoutApprovalDetails.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Repository</th>
+                                        <th>PR Title</th>
+                                        <th>Author</th>
+                                        <th>Merged Date</th>
+                                        <th>Link</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var pr in prsMergedWithoutApprovalDetails)
+                                    {
+                                        <tr>
+                                            <td>@pr.RepositoryName</td>
+                                            <td>@pr.Title</td>
+                                            <td>@pr.AuthorName</td>
+                                            <td>@pr.MergedOn?.ToString("yyyy-MM-dd HH:mm")</td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(pr.Url))
+                                                {
+                                                    <a href="@pr.Url" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                        <i class="bi bi-box-arrow-up-right"></i>
+                                                    </a>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-check-circle text-success" style="font-size: 3rem;"></i>
+                            <p class="mt-2">No PRs merged without approval found for the selected period.</p>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="ClosePrsMergedWithoutApprovalModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Repositories with Bypasses Details -->
+@if (showRepositoriesWithBypassesModal)
+{
+    <div class="modal show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-building-exclamation text-danger me-2"></i>
+                        Repositories with Bypasses - Details
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseRepositoriesWithBypassesModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoadingRepositoriesWithBypassesDetails)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading repository details...</p>
+                        </div>
+                    }
+                    else if (repositoriesWithBypassesDetails != null && repositoriesWithBypassesDetails.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Repository</th>
+                                        <th>Bypass Count</th>
+                                        <th>Latest Bypass Date</th>
+                                        <th>Risk Level</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var repo in repositoriesWithBypassesDetails)
+                                    {
+                                        <tr>
+                                            <td>@repo.RepositoryName</td>
+                                            <td>
+                                                <span class="badge bg-danger">@repo.BypassCount</span>
+                                            </td>
+                                            <td>@repo.LatestBypassDate?.ToString("yyyy-MM-dd HH:mm")</td>
+                                            <td>
+                                                <span class="badge @(repo.BypassCount > 5 ? "bg-danger" : repo.BypassCount > 2 ? "bg-warning" : "bg-info")">
+                                                    @(repo.BypassCount > 5 ? "High" : repo.BypassCount > 2 ? "Medium" : "Low")
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-shield-check text-success" style="font-size: 3rem;"></i>
+                            <p class="mt-2">No repositories with approval bypasses found for the selected period.</p>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseRepositoriesWithBypassesModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Active vs Stale PRs Details -->
+@if (showActiveVsStalePrsModal)
+{
+    <div class="modal show" style="display: block; background: rgba(0,0,0,0.5);" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-hourglass-split text-primary me-2"></i>
+                        Active vs Stale PRs - Details
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseActiveVsStalePrsModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoadingActiveVsStalePrsDetails)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading PR details...</p>
+                        </div>
+                    }
+                    else if (activeVsStalePrsDetails != null && activeVsStalePrsDetails.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Repository</th>
+                                        <th>PR Title</th>
+                                        <th>Author</th>
+                                        <th>Created Date</th>
+                                        <th>Age (Days)</th>
+                                        <th>Status</th>
+                                        <th>Link</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var pr in activeVsStalePrsDetails)
+                                    {
+                                        var ageDays = (DateTime.Now - pr.CreatedOn).Days;
+                                        var statusClass = ageDays <= 3 ? "bg-success" : ageDays <= 7 ? "bg-warning" : "bg-danger";
+                                        var statusText = ageDays <= 3 ? "Fresh" : ageDays <= 7 ? "Active" : "Stale";
+                                        
+                                        <tr>
+                                            <td>@pr.RepositoryName</td>
+                                            <td>@pr.Title</td>
+                                            <td>@pr.AuthorName</td>
+                                            <td>@pr.CreatedOn.ToString("yyyy-MM-dd HH:mm")</td>
+                                            <td>@ageDays</td>
+                                            <td>
+                                                <span class="badge @statusClass">@statusText</span>
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(pr.Url))
+                                                {
+                                                    <a href="@pr.Url" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                        <i class="bi bi-box-arrow-up-right"></i>
+                                                    </a>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                            <p class="mt-2">No open PRs found for the selected criteria.</p>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseActiveVsStalePrsModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private IEnumerable<RepositorySummaryDto>? repositories;
     private List<RepositorySummaryDto>? topOpenPrs;
@@ -477,6 +727,21 @@
     // PR Dashboard KPI Data
     private PrDashboardResponseDto? prDashboardData;
     private bool isLoadingKpis = false;
+
+    // Modal state variables
+    private bool showPrsMergedWithoutApprovalModal = false;
+    private bool showRepositoriesWithBypassesModal = false;
+    private bool showActiveVsStalePrsModal = false;
+    
+    // Loading states for modal data
+    private bool isLoadingPrsMergedWithoutApprovalDetails = false;
+    private bool isLoadingRepositoriesWithBypassesDetails = false;
+    private bool isLoadingActiveVsStalePrsDetails = false;
+    
+    // Modal data collections
+    private List<PrDetailsDto>? prsMergedWithoutApprovalDetails;
+    private List<RepositoryBypassDetailsDto>? repositoriesWithBypassesDetails;
+    private List<PrDetailsDto>? activeVsStalePrsDetails;
 
     // Helper properties for easy access
     private int? prsMergedWithoutApproval => prDashboardData?.SecurityCompliance?.PrsMergedWithoutApproval;
@@ -907,6 +1172,188 @@
     private string GetReviewDistributionTextClass() => reviewDistributionBalance < 50 ? "text-danger" : reviewDistributionBalance < 70 ? "text-warning" : "text-success";
     private string GetReviewDistributionIconClass() => reviewDistributionBalance < 50 ? "icon-negative" : reviewDistributionBalance < 70 ? "icon-warning" : "icon-positive";
     private string GetReviewDistributionValueClass() => reviewDistributionBalance < 50 ? "value-negative" : reviewDistributionBalance < 70 ? "value-warning" : "value-positive";
+
+    // Modal Methods
+    private async Task ShowPrsMergedWithoutApprovalModal()
+    {
+        showPrsMergedWithoutApprovalModal = true;
+        isLoadingPrsMergedWithoutApprovalDetails = true;
+        StateHasChanged();
+        
+        try
+        {
+            await LoadPrsMergedWithoutApprovalDetails();
+        }
+        finally
+        {
+            isLoadingPrsMergedWithoutApprovalDetails = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClosePrsMergedWithoutApprovalModal()
+    {
+        showPrsMergedWithoutApprovalModal = false;
+        prsMergedWithoutApprovalDetails = null;
+    }
+
+    private async Task ShowRepositoriesWithBypassesModal()
+    {
+        showRepositoriesWithBypassesModal = true;
+        isLoadingRepositoriesWithBypassesDetails = true;
+        StateHasChanged();
+        
+        try
+        {
+            await LoadRepositoriesWithBypassesDetails();
+        }
+        finally
+        {
+            isLoadingRepositoriesWithBypassesDetails = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseRepositoriesWithBypassesModal()
+    {
+        showRepositoriesWithBypassesModal = false;
+        repositoriesWithBypassesDetails = null;
+    }
+
+    private async Task ShowActiveVsStalePrsModal()
+    {
+        showActiveVsStalePrsModal = true;
+        isLoadingActiveVsStalePrsDetails = true;
+        StateHasChanged();
+        
+        try
+        {
+            await LoadActiveVsStalePrsDetails();
+        }
+        finally
+        {
+            isLoadingActiveVsStalePrsDetails = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseActiveVsStalePrsModal()
+    {
+        showActiveVsStalePrsModal = false;
+        activeVsStalePrsDetails = null;
+    }
+
+    // Data Loading Methods for Modals
+    private async Task LoadPrsMergedWithoutApprovalDetails()
+    {
+        try
+        {
+            var workspace = WorkspaceService.SelectedWorkspace;
+            if (string.IsNullOrEmpty(workspace))
+            {
+                errorMessage = "No workspace selected.";
+                return;
+            }
+
+            var url = $"api/prdashboard/prs-merged-without-approval-details?workspace={workspace}";
+            
+            if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "ALL")
+                url += $"&repoSlug={selectedRepoSlug}";
+            
+            if (startDate.HasValue)
+                url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+                
+            if (endDate.HasValue)
+                url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+
+            if (filterType == "user" && selectedUserId.HasValue)
+                url += $"&userId={selectedUserId.Value}";
+            
+            if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1)
+                url += $"&teamId={selectedTeamId.Value}";
+
+            prsMergedWithoutApprovalDetails = await Http.GetFromJsonAsync<List<PrDetailsDto>>(url);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading PR details: {ex.Message}";
+            Logger.LogError(ex, "Error loading PRs merged without approval details");
+        }
+    }
+
+    private async Task LoadRepositoriesWithBypassesDetails()
+    {
+        try
+        {
+            var workspace = WorkspaceService.SelectedWorkspace;
+            if (string.IsNullOrEmpty(workspace))
+            {
+                errorMessage = "No workspace selected.";
+                return;
+            }
+
+            var url = $"api/prdashboard/repositories-with-bypasses-details?workspace={workspace}";
+            
+            if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "ALL")
+                url += $"&repoSlug={selectedRepoSlug}";
+            
+            if (startDate.HasValue)
+                url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+                
+            if (endDate.HasValue)
+                url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+
+            if (filterType == "user" && selectedUserId.HasValue)
+                url += $"&userId={selectedUserId.Value}";
+            
+            if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1)
+                url += $"&teamId={selectedTeamId.Value}";
+
+            repositoriesWithBypassesDetails = await Http.GetFromJsonAsync<List<RepositoryBypassDetailsDto>>(url);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading repository details: {ex.Message}";
+            Logger.LogError(ex, "Error loading repositories with bypasses details");
+        }
+    }
+
+    private async Task LoadActiveVsStalePrsDetails()
+    {
+        try
+        {
+            var workspace = WorkspaceService.SelectedWorkspace;
+            if (string.IsNullOrEmpty(workspace))
+            {
+                errorMessage = "No workspace selected.";
+                return;
+            }
+
+            var url = $"api/prdashboard/active-vs-stale-prs-details?workspace={workspace}";
+            
+            if (!string.IsNullOrEmpty(selectedRepoSlug) && selectedRepoSlug != "ALL")
+                url += $"&repoSlug={selectedRepoSlug}";
+            
+            if (startDate.HasValue)
+                url += $"&startDate={startDate.Value:yyyy-MM-ddTHH:mm:ss}";
+                
+            if (endDate.HasValue)
+                url += $"&endDate={endDate.Value:yyyy-MM-ddTHH:mm:ss}";
+
+            if (filterType == "user" && selectedUserId.HasValue)
+                url += $"&userId={selectedUserId.Value}";
+            
+            if (filterType == "team" && selectedTeamId.HasValue && selectedTeamId.Value != -1)
+                url += $"&teamId={selectedTeamId.Value}";
+
+            activeVsStalePrsDetails = await Http.GetFromJsonAsync<List<PrDetailsDto>>(url);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading PR details: {ex.Message}";
+            Logger.LogError(ex, "Error loading active vs stale PRs details");
+        }
+    }
 }
 
 <!-- Include CSS for KPI styling -->
@@ -1012,6 +1459,24 @@
     .icon-negative { color: #dc3545; }
     .icon-warning { color: #fd7e14; }
     .icon-neutral { color: #6f42c1; }
+    
+    /* KPI Drill-down Button Styling */
+    .kpi-drill-down-btn {
+        opacity: 0.7;
+        transition: all 0.2s ease;
+        border-radius: 4px;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .kpi-drill-down-btn:hover {
+        opacity: 1;
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    
+    .kpi-card:hover .kpi-drill-down-btn {
+        opacity: 1;
+    }
 </style>
 
 <script>
