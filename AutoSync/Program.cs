@@ -42,18 +42,7 @@ namespace tVar.AutoSync
             int batchDays = config.GetValue<int?>("AutoSyncBatchDays") ?? 10;
             var syncSettings = config.GetSection("SyncSettings").Get<SyncSettings>() ?? new SyncSettings(); // Load SyncSettings
 
-            // Optional AutoSync overrides to enable/disable processing types without changing shared SyncSettings
-            var autoSyncOverrides = config.GetSection("AutoSync");
-            bool? processCommitsOverride = autoSyncOverrides.GetValue<bool?>("ProcessCommits");
-            bool? processPullRequestsOverride = autoSyncOverrides.GetValue<bool?>("ProcessPullRequests");
-            if (processCommitsOverride.HasValue)
-            {
-                syncSettings.SyncTargets.Commits = processCommitsOverride.Value;
-            }
-            if (processPullRequestsOverride.HasValue)
-            {
-                syncSettings.SyncTargets.PullRequests = processPullRequestsOverride.Value;
-            }
+            // SyncTargets in SyncSettings controls enabled data types
 
             Console.WriteLine($"Starting tVar.AutoSync with batch size: {batchDays} days");
             Console.WriteLine($"Sync Mode: {syncSettings.Mode}, Overwrite: {syncSettings.Overwrite}");

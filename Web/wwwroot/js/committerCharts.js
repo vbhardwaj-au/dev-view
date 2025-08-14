@@ -534,7 +534,7 @@ window.renderPrsMergedByWeekdayChart = async (chartData) => {
     }
 }; 
 
-window.renderPrAgeChart = async (chartData) => {
+window.renderPrAgeChart = async (chartData, filterDays = 0) => {
     try {
         if (!chartData || (!chartData.openPrAge?.length && !chartData.mergedPrAge?.length)) {
             console.warn('No PR age data provided or data is empty.');
@@ -555,8 +555,13 @@ window.renderPrAgeChart = async (chartData) => {
             window.committerCharts['prAgeChart'].destroy();
         }
 
-        const openPrData = chartData.openPrAge.map(d => ({ x: d.days, y: d.prCount }));
-        const mergedPrData = chartData.mergedPrAge.map(d => ({ x: d.days, y: d.prCount }));
+        // Apply client-side filtering based on minimum days
+        const openPrData = chartData.openPrAge
+            .filter(d => d.days >= filterDays)
+            .map(d => ({ x: d.days, y: d.prCount }));
+        const mergedPrData = chartData.mergedPrAge
+            .filter(d => d.days >= filterDays)
+            .map(d => ({ x: d.days, y: d.prCount }));
 
         const ctx = chartElement.getContext('2d');
         window.committerCharts['prAgeChart'] = new Chart(ctx, {
@@ -603,7 +608,8 @@ window.renderPrAgeChart = async (chartData) => {
                     tooltip: {
                         callbacks: {
                             title: (context) => `Age: ${context[0].raw.x} days`,
-                            label: (context) => `${context.dataset.label}: ${context.raw.y} PRs`
+                            label: (context) => `${context.dataset.label}: ${context.raw.y} PRs`,
+                            footer: (context) => filterDays > 0 ? `Filter: ≥ ${filterDays} days` : ''
                         }
                     }
                 }
