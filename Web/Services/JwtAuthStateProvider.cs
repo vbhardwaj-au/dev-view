@@ -10,14 +10,16 @@ namespace Web.Services
     {
         private readonly IJSRuntime _jsRuntime;
         private readonly ILogger<JwtAuthStateProvider> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
         private ClaimsPrincipal _anonymous = new(new ClaimsIdentity());
         private AuthenticationState? _cachedAuthState;
         private bool _isInitialized = false;
-        
-        public JwtAuthStateProvider(IJSRuntime jsRuntime, ILogger<JwtAuthStateProvider> logger)
+
+        public JwtAuthStateProvider(IJSRuntime jsRuntime, ILogger<JwtAuthStateProvider> logger, IHttpContextAccessor httpContextAccessor)
         {
             _jsRuntime = jsRuntime;
             _logger = logger;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public override async Task<AuthenticationState> GetAuthenticationStateAsync()
@@ -28,9 +30,19 @@ namespace Web.Services
                 return _cachedAuthState;
             }
 
+            // First check if we have cookie authentication (from Azure AD)
+            var httpContext = _httpContextAccessor.HttpContext;
+            if (httpContext?.User?.Identity?.IsAuthenticated == true)
+            {
+                _logger.LogInformation("Cookie authentication detected for user: {Name}", httpContext.User.Identity.Name);
+                _cachedAuthState = new AuthenticationState(httpContext.User);
+                _isInitialized = true;
+                return _cachedAuthState;
+            }
+
             try
             {
-                // Try to get token from localStorage with timeout
+                // Try to get JWT token from localStorage
                 var token = await _jsRuntime.InvokeAsync<string>("authHelper.getToken", TimeSpan.FromSeconds(2));
                 
                 if (string.IsNullOrEmpty(token))

@@ -163,19 +163,22 @@ namespace Web.Services
             DisplayName = null;
             Roles = Array.Empty<string>();
             BearerHandler.Token = null;
-            
+
             // Clear token from localStorage
             try
             {
                 await _jsRuntime.InvokeVoidAsync("authHelper.removeToken");
             }
             catch { }
-            
+
             if (_authStateProvider is JwtAuthStateProvider jwt)
             {
                 await jwt.ClearAsync();
             }
-            _nav.NavigateTo("/login");
+
+            // Check if we need to sign out from Azure AD as well
+            // This will sign out from both cookie auth and Azure AD
+            _nav.NavigateTo("/Account/SignOut", forceLoad: true);
         }
     }
 }

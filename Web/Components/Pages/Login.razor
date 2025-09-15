@@ -3,10 +3,15 @@
 @using Web.Services
 @using System.ComponentModel.DataAnnotations
 @using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.OpenIdConnect
 @inject AuthService Auth
+@inject IHybridAuthService HybridAuth
 @inject NavigationManager Navigation
 @inject HttpClient Http
 @inject ILogger<Login> Logger
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <div class="container mt-5" style="max-width:420px;">
@@ -15,33 +20,137 @@
     {
         <div class="alert alert-danger">@error</div>
     }
-    <EditForm Model="@model" OnValidSubmit="@HandleLogin">
-        <DataAnnotationsValidator />
-        <div class="mb-3">
-            <label class="form-label">Username</label>
-            <InputText class="form-control" @bind-Value="model.Username" />
-            <ValidationMessage For="@(() => model.Username)" />
+    
+    @if (authConfig.AzureAdEnabled && !authConfig.AllowFallback)
+    {
+        <!-- Azure AD Only Mode -->
+        <div class="text-center">
+            <p class="mb-3">Please sign in with your Microsoft account.</p>
+            <button @onclick="SignInWithAzureAd" class="btn btn-primary btn-lg w-100">
+                <i class="fas fa-microsoft me-2"></i>
+                Sign in with Microsoft
+            </button>
         </div>
-        <div class="mb-3">
-            <label class="form-label">Password</label>
-            <InputText type="password" class="form-control" @bind-Value="model.Password" />
-            <ValidationMessage For="@(() => model.Password)" />
+    }
+    else if (authConfig.AzureAdEnabled && authConfig.AllowFallback)
+    {
+        <!-- Hybrid Mode: Both Azure AD and Database -->
+        <div class="text-center mb-4">
+            <button @onclick="SignInWithAzureAd" class="btn btn-primary btn-lg w-100 mb-3">
+                <i class="fas fa-microsoft me-2"></i>
+                Sign in with Microsoft
+            </button>
+            <div class="divider-container">
+                <hr class="divider-line">
+                <span class="divider-text">OR</span>
+                <hr class="divider-line">
+            </div>
         </div>
-        <button type="submit" class="btn btn-primary w-100" disabled="@busy">
-            @if (busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
-            Sign in
-        </button>
-    </EditForm>
+        
+        <!-- Database Login Form -->
+        <EditForm Model="@model" OnValidSubmit="@HandleLogin">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                <InputText class="form-control" @bind-Value="model.Username" />
+                <ValidationMessage For="@(() => model.Username)" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <InputText type="password" class="form-control" @bind-Value="model.Password" />
+                <ValidationMessage For="@(() => model.Password)" />
+            </div>
+            <button type="submit" class="btn btn-outline-primary w-100" disabled="@busy">
+                @if (busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                Sign in with Password
+            </button>
+        </EditForm>
+    }
+    else
+    {
+        <!-- Database Only Mode -->
+        <EditForm Model="@model" OnValidSubmit="@HandleLogin">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                <InputText class="form-control" @bind-Value="model.Username" />
+                <ValidationMessage For="@(() => model.Username)" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <InputText type="password" class="form-control" @bind-Value="model.Password" />
+                <ValidationMessage For="@(() => model.Password)" />
+            </div>
+            <button type="submit" class="btn btn-primary w-100" disabled="@busy">
+                @if (busy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                Sign in
+            </button>
+        </EditForm>
+    }
 </div>
+
+<style>
+    .divider-container {
+        display: flex;
+        align-items: center;
+        margin: 1.5rem 0;
+    }
+    
+    .divider-line {
+        flex: 1;
+        height: 1px;
+        background-color: #dee2e6;
+        margin: 0;
+        border: none;
+    }
+    
+    .divider-text {
+        padding: 0 1rem;
+        color: #6c757d;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+</style>
 
 @code {
     private LoginModel model = new();
     private string? error;
     private bool busy;
-
+    private AuthConfig authConfig = new();
+    
     protected override async Task OnInitializedAsync()
     {
         Logger.LogInformation("Login page initialized");
+
+        // Check for error in query string
+        var uri = new Uri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var errorParam = query["error"];
+        if (!string.IsNullOrEmpty(errorParam))
+        {
+            Logger.LogWarning("Login page loaded with error: {Error}", errorParam);
+            error = errorParam switch
+            {
+                "remote" => "Azure AD authentication failed. Please try again.",
+                "authfailed" => "Authentication failed. Please check your credentials.",
+                "notauthenticated" => "You are not authenticated. Please sign in.",
+                "callback" => "Error processing authentication. Please try again.",
+                _ => "An error occurred during sign-in."
+            };
+        }
+
+        try
+        {
+            authConfig = await HybridAuth.GetAuthConfigAsync();
+            Logger.LogInformation("Auth config loaded: AzureAdEnabled={Enabled}, AllowFallback={Fallback}",
+                authConfig.AzureAdEnabled, authConfig.AllowFallback);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to get auth configuration");
+            // Use default config (database only)
+            authConfig = new AuthConfig();
+        }
         
         // Check if this is first run and redirect to setup if needed
         try
@@ -65,6 +174,30 @@
         public bool IsFirstRun { get; set; }
     }
 
+    private async Task SignInWithAzureAd()
+    {
+        try
+        {
+            busy = true;
+            StateHasChanged();
+
+            Logger.LogInformation("Initiating Azure AD sign-in");
+            Logger.LogInformation("Current URL: {Url}", Navigation.Uri);
+
+            // Use JavaScript to trigger the OpenIdConnect challenge
+            await JS.InvokeVoidAsync("authHelper.triggerAzureAdSignIn");
+
+            Logger.LogInformation("JavaScript redirect triggered");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Azure AD sign-in error: {Error}", ex.Message);
+            error = $"Azure AD sign-in error: {ex.Message}";
+            busy = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task HandleLogin()
     {
         try
@@ -82,12 +215,12 @@
             busy = true;
             StateHasChanged(); // Force UI update to show spinner
             
-            Logger.LogInformation("Calling Auth.LoginAsync for user: {Username}", model.Username);
-            var ok = await Auth.LoginAsync(model.Username, model.Password);
+            Logger.LogInformation("Calling HybridAuth.LoginAsync for user: {Username}", model.Username);
+            var result = await HybridAuth.LoginAsync(model.Username, model.Password);
             
             busy = false;
             
-            if (ok)
+            if (result.Success)
             {
                 Logger.LogInformation("Login successful for user: {Username}", model.Username);
                 // Small delay to ensure auth state is propagated
@@ -96,10 +229,15 @@
                 Logger.LogInformation("Navigating to /dashboard");
                 Navigation.NavigateTo("/dashboard", forceLoad: false);
             }
+            else if (result.RequiresRedirect && !string.IsNullOrEmpty(result.RedirectUrl))
+            {
+                Logger.LogInformation("Redirecting to Azure AD for user: {Username}", model.Username);
+                Navigation.NavigateTo(result.RedirectUrl, forceLoad: true);
+            }
             else
             {
                 Logger.LogWarning("Login failed for user: {Username}", model.Username);
-                error = "Invalid username or password";
+                error = result.ErrorMessage ?? "Invalid username or password";
             }
         }
         catch (Exception ex)

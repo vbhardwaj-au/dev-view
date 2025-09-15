@@ -1,0 +1,106 @@
+@page "/process-auth"
+@using Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject IHybridAuthService HybridAuth
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ILogger<ProcessAuth> Logger
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<div class="container mt-5 text-center">
+    <h3>Processing authentication...</h3>
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-3">@statusMessage</p>
+</div>
+
+@code {
+    private string statusMessage = "Please wait while we complete your sign-in.";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ProcessAuthentication();
+        }
+    }
+
+    private async Task ProcessAuthentication()
+    {
+        try
+        {
+            Logger.LogInformation("ProcessAuth: Starting authentication processing");
+            statusMessage = "Verifying your identity...";
+            StateHasChanged();
+
+            // Get the authenticated user from the authentication state
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            Logger.LogInformation("ProcessAuth: AuthState retrieved. IsAuthenticated: {IsAuth}, Name: {Name}, AuthType: {AuthType}",
+                user?.Identity?.IsAuthenticated,
+                user?.Identity?.Name,
+                user?.Identity?.AuthenticationType);
+
+            // Log all claims
+            if (user?.Claims != null)
+            {
+                foreach (var claim in user.Claims)
+                {
+                    Logger.LogInformation("Claim: {Type} = {Value}", claim.Type, claim.Value);
+                }
+            }
+
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                Logger.LogInformation("ProcessAuth: User authenticated via Azure AD - {Name}", user.Identity.Name);
+                statusMessage = "Creating your session...";
+                StateHasChanged();
+
+                // Process the Azure AD user through the hybrid auth service
+                // This will call the API to create/update user and generate JWT token
+                var result = await HybridAuth.HandleAzureCallbackAsync(user);
+
+                if (result.Success)
+                {
+                    Logger.LogInformation("ProcessAuth: Azure AD authentication successful, token generated");
+                    statusMessage = "Success! Redirecting to dashboard...";
+                    StateHasChanged();
+
+                    await Task.Delay(500); // Brief delay to show success message
+                    Navigation.NavigateTo("/dashboard", forceLoad: true);
+                }
+                else
+                {
+                    Logger.LogWarning("ProcessAuth: Azure AD authentication failed - {Error}", result.ErrorMessage);
+                    statusMessage = $"Authentication failed: {result.ErrorMessage}";
+                    StateHasChanged();
+
+                    await Task.Delay(2000);
+                    Navigation.NavigateTo($"/login?error={Uri.EscapeDataString(result.ErrorMessage ?? "Authentication failed")}", forceLoad: true);
+                }
+            }
+            else
+            {
+                Logger.LogWarning("ProcessAuth: No authenticated user found");
+                statusMessage = "No authenticated user found. Redirecting to login...";
+                StateHasChanged();
+
+                await Task.Delay(1000);
+                Navigation.NavigateTo("/login?error=notauthenticated", forceLoad: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "ProcessAuth: Error processing authentication");
+            statusMessage = $"Error: {ex.Message}";
+            StateHasChanged();
+
+            await Task.Delay(2000);
+            Navigation.NavigateTo("/login?error=callback", forceLoad: true);
+        }
+    }
+}

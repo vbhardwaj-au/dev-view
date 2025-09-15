@@ -14,5 +14,10 @@ window.authHelper = {
     
     hasToken: function() {
         return !!localStorage.getItem('jwt-token');
+    },
+    
+    triggerAzureAdSignIn: function() {
+        // Redirect to the Account sign-in endpoint which triggers Azure AD
+        window.location.href = '/Account/SignIn';
     }
 };

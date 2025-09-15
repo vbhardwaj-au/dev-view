@@ -15,6 +15,8 @@ using Integration.Repositories;
 using Integration.Users;
 using Integration.Utils;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
@@ -22,13 +24,23 @@ using System.Text;
 Dapper.SqlMapper.Settings.CommandTimeout = 300; // 5 minutes
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Register authentication services
+builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
+builder.Services.AddScoped<IAuthenticationConfigService, AuthenticationConfigService>();
+builder.Services.AddScoped<IMicrosoftGraphService, MicrosoftGraphService>();
+
+// Check if Azure AD is enabled
+var azureAdEnabled = builder.Configuration.GetValue<bool>("AzureAd:Enabled", false);
+
 // JWT Auth
 var jwtKey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "devview-api";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "devview-api";
+
 if (!string.IsNullOrWhiteSpace(jwtKey))
 {
-    builder.Services.AddAuthentication(options =>
+    var authBuilder = builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
         options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -46,6 +58,14 @@ if (!string.IsNullOrWhiteSpace(jwtKey))
             ClockSkew = TimeSpan.FromMinutes(2)
         };
     });
+
+    // Add Azure AD authentication if enabled
+    if (azureAdEnabled)
+    {
+        authBuilder.AddMicrosoftIdentityWebApi(
+            builder.Configuration.GetSection("AzureAd"),
+            "AzureAd");
+    }
 }
 
 // 1. Create BitbucketConfig from appsettings.json

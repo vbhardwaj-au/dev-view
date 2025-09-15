@@ -287,16 +287,22 @@ CREATE INDEX IX_TeamMembers_TeamId ON TeamMembers(TeamId);
 CREATE INDEX IX_TeamMembers_UserId ON TeamMembers(UserId);
 CREATE INDEX IX_TeamMembers_TeamId_UserId ON TeamMembers(TeamId, UserId);
 
--- Authentication & Authorization tables (simple custom auth)
+-- Authentication & Authorization tables (simple custom auth with Azure AD support)
 CREATE TABLE AuthUsers (
     Id INT IDENTITY(1,1) PRIMARY KEY,
     Username NVARCHAR(100) NOT NULL UNIQUE,
     PasswordHash VARBINARY(64) NOT NULL, -- SHA2_512
     PasswordSalt VARBINARY(32) NOT NULL, -- random salt
     DisplayName NVARCHAR(255) NULL,
+    Email NVARCHAR(255) NULL, -- Azure AD integration
+    JobTitle NVARCHAR(255) NULL, -- Azure AD integration
+    Department NVARCHAR(255) NULL, -- Azure AD integration
+    AuthProvider NVARCHAR(50) NOT NULL DEFAULT 'Database', -- 'Database' or 'AzureAd'
+    AzureAdObjectId NVARCHAR(100) NULL, -- Azure AD Object ID
     IsActive BIT NOT NULL DEFAULT 1,
     CreatedOn DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
-    ModifiedOn DATETIME2 NULL
+    ModifiedOn DATETIME2 NULL,
+    CONSTRAINT CK_AuthUsers_AuthProvider CHECK (AuthProvider IN ('Database', 'AzureAd'))
 );
 
 CREATE TABLE AuthRoles (
@@ -327,5 +333,8 @@ CREATE TABLE ApiKeys (
 
 -- Indexes
 CREATE INDEX IX_AuthUsers_Username ON AuthUsers(Username);
+CREATE INDEX IX_AuthUsers_Email ON AuthUsers(Email);
+CREATE INDEX IX_AuthUsers_AzureAdObjectId ON AuthUsers(AzureAdObjectId);
+CREATE INDEX IX_AuthUsers_AuthProvider ON AuthUsers(AuthProvider);
 CREATE INDEX IX_AuthUserRoles_UserId ON AuthUserRoles(UserId);
 CREATE INDEX IX_AuthUserRoles_RoleId ON AuthUserRoles(RoleId);

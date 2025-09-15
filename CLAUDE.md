@@ -6,15 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **.NET 9** - ASP.NET Core Web API and Blazor Server
 - **SQL Server** - Database with Dapper ORM
 - **Bitbucket Cloud API** - External integration for data syncing
-- **Chart.js** - Frontend charting library
+- **Chart.js** - Frontend charting library (v3.9+)
 - **Radzen Blazor** - UI component library
 
 ## Project Structure
-The solution follows a clean architecture pattern with 5 main projects:
+The solution follows a clean architecture pattern with 6 main projects:
 - **API** - RESTful API service (port 5000)
-- **Web** - Blazor Server UI (port 5084) 
+- **Web** - Blazor Server UI (port 5084)
 - **Data** - Shared data layer with models and repositories
-- **Integration** - Bitbucket API client layer
+- **Integration** - Bitbucket API client layer (.NET 8/9)
 - **AutoSync** - Background sync service
 - **Entities** - Shared DTOs between projects
 
@@ -37,13 +37,16 @@ dotnet build
 dotnet test
 ```
 
-### Database
+### Database Setup
 ```sql
 -- Create database
-CREATE DATABASE bb;
+CREATE DATABASE DevView;
 
--- Apply schema
--- Run API/SqlSchema/schema.sql
+-- Apply schema (in order)
+-- 1. API/SqlSchema/schema.sql
+-- 2. API/SqlSchema/alter-auth.sql
+-- 3. API/SqlSchema/seed-auth.sql
+-- 4. API/SqlSchema/migrations-azure-ad.sql (for Azure AD)
 ```
 
 ### Publishing
@@ -61,46 +64,77 @@ cd AutoSync && dotnet publish -c Release -o ./publish
 ## Architecture Overview
 
 ### API Layer (API project)
-- **Port**: 5000
-- **Authentication**: JWT Bearer tokens (optional)
-- **Endpoints**: Analytics, Commits, PullRequests, Sync, Teams, Auth
-- **Services**: AnalyticsService, CommitAnalysisService, PullRequestAnalysisService
+- **Port**: 5000 (HTTP), 5001 (HTTPS)
+- **Authentication**: JWT Bearer tokens with optional Azure AD integration
+- **Endpoints**: Analytics, Commits, PullRequests, Sync, Teams, Auth, UserDashboard
+- **Services**: AnalyticsService, CommitAnalysisService, PullRequestAnalysisService, AuthenticationService
 - **Swagger**: Available at http://localhost:5000/swagger
+- **CORS**: Configured for ports 5084 and 7051
 
 ### Web Layer (Web project)
-- **Port**: 5084
+- **Port**: 5084 (HTTP), 7051 (HTTPS)
 - **Framework**: Blazor Server with InteractiveServer render mode
-- **Authentication**: JWT-based with cookie auth for server-side
-- **Key Pages**: Dashboard, UserDashboard, Commits, PullRequests, TopCommitters
-- **Services**: AuthService, WorkspaceService, BitbucketUrlService
+- **Authentication**: JWT-based with cookie auth for server-side, Azure AD support
+- **Key Pages**: Dashboard, UserDashboard, Commits, PullRequests, TopCommitters, PrDashboard, Teams, Login
+- **Services**: AuthService, HybridAuthService, WorkspaceService, BitbucketUrlService
+- **JavaScript**: Chart integration (wwwroot/js/), auth helpers
 
 ### Data Layer (Data project)
 - **ORM**: Dapper with SQL Server
-- **Models**: Commit, CommitFile, PullRequest, SyncSettings, Team, TeamMember
+- **Models**: Commit, CommitFile, PullRequest, SyncSettings, Team, TeamMember, AuthUser
 - **Repositories**: CommitRepository, PullRequestRepository
 - **Shared between**: API and AutoSync projects
+- **Command timeout**: 5 minutes for long-running operations
 
 ### Integration Layer
 - **Purpose**: Bitbucket Cloud API client
 - **Services**: BitbucketCommitsService, BitbucketPullRequestsService, BitbucketRepositoriesService, BitbucketUsersService
 - **Utilities**: DiffParserService, FileClassificationService
+- **Note**: Targets .NET 8 while other projects use .NET 9
 
 ## Key Configuration Files
 
 ### API/appsettings.json
-- Database connection string
-- Bitbucket OAuth credentials (ConsumerKey, ConsumerSecret)
-- JWT settings (optional)
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=DevView;..."
+  },
+  "Bitbucket": {
+    "ConsumerKey": "YOUR_KEY",
+    "ConsumerSecret": "YOUR_SECRET"
+  },
+  "Jwt": {
+    "Key": "32-character-minimum-secret-key",
+    "Issuer": "devview-api",
+    "Audience": "devview-api",
+    "ExpirationDays": 30
+  },
+  "AzureAd": {
+    "Enabled": false,
+    "TenantId": "YOUR_TENANT_ID",
+    "ClientId": "YOUR_CLIENT_ID",
+    "ClientSecret": "YOUR_CLIENT_SECRET"
+  },
+  "Authentication": {
+    "DefaultProvider": "Database",
+    "AllowFallback": true,
+    "AutoCreateUsers": true
+  }
+}
+```
 
 ### Web/appsettings.json
 - ApiBaseUrl (default: http://localhost:5000)
+- AzureAd configuration (matching API settings)
 
 ### AutoSync/appsettings.json
 - Same database and Bitbucket settings as API
-- Sync configuration settings
+- SyncSettings for mode (Full/Delta) and targets
 
 ## Database Schema
 Main tables:
+- **AuthUsers** - Authentication users with roles (Admin, Manager, User)
 - **Users** - Bitbucket users with avatar support
 - **Repositories** - Repository metadata with ExcludeFromReporting flag
 - **Commits** - Commit data with lines added/removed
@@ -110,20 +144,43 @@ Main tables:
 - **TeamMembers** - Team membership
 
 ## Authentication Flow
-1. User logs in via /login page
-2. API validates credentials against Users table
+
+### Database Authentication (Default)
+1. User logs in via /login page with username/password
+2. API validates credentials against AuthUsers table
 3. JWT token generated and stored in localStorage
 4. BearerHandler adds token to API requests
 5. Server-side cookie auth for Blazor components
 
+### Azure AD Authentication (Optional)
+1. User clicks "Sign in with Microsoft" on /login
+2. Redirects to Azure AD for authentication
+3. Returns with OIDC token
+4. User auto-created in AuthUsers table if new
+5. JWT token generated for API access
+
 ## Sync Modes
-- **Full Sync**: Historical data in 10-day batches
-- **Delta Sync**: Recent changes only
+- **Full Sync**: Historical data in configurable batches (default 10 days)
+- **Delta Sync**: Recent changes only (configurable days)
 - **Manual Sync**: Via API endpoints or AutoSync console
+- **Selective Sync**: Choose what to sync (users, repositories, commits, PRs)
+
+## Role-Based Access Control
+- **Admin**: Full system access, user management, all settings, can modify file classifications
+- **Manager**: Team management, elevated analytics access
+- **User**: Standard access to dashboards and personal analytics, read-only file classification
+
+## Timezone Handling
+- Default timezone: "AUS Eastern Standard Time"
+- All date conversions handled at database level
+- Inclusive end dates (includes full day up to 23:59:59)
+- Configurable via Application:ReportingTimezone setting
 
 ## Important Notes
-- The solution was renamed from "BB" to "DevView" but some references to "BB" may remain in configuration
-- The startup script references outdated ports (5005 instead of 5000) - use dotnet run directly
-- Integration project targets .NET 8 while others use .NET 9
-- CORS is configured for ports 5084 and 7051
-- Default command timeout is 5 minutes for long-running operations
+- Original project name was "BB", renamed to "DevView" - some references remain
+- Integration project uses .NET 8 while others use .NET 9
+- Build warnings policy: 0 warnings tolerated
+- Default admin login: username `admin`, password `Admin#12345!`
+- JWT tokens expire after 30 days
+- CORS configured for specific ports - update if changing ports
+- File classification is automatic with admin-only modification rights

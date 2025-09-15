@@ -32,6 +32,11 @@
                         <!-- Allow access to Login page without authentication -->
                         <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
                     }
+                    else if (routeData.PageType?.FullName?.Contains("ProcessAuth") == true)
+                    {
+                        <!-- Allow access to ProcessAuth page to handle Azure AD callback -->
+                        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+                    }
                     else
                     {
                         <LayoutView Layout="typeof(Layout.MainLayout)">
@@ -53,6 +58,7 @@
 @code {
     protected override async Task OnInitializedAsync()
     {
+        // Temporarily disabled API call to test routing
         // Check if this is first run and redirect to setup if needed
         try
         {
@@ -61,11 +67,12 @@
             // Don't check if already on setup page
             if (!currentPath.Contains("/setup"))
             {
-                var response = await Http.GetFromJsonAsync<FirstRunResponse>("api/auth/check-first-run");
-                if (response?.IsFirstRun == true)
-                {
-                    Navigation.NavigateTo("/setup");
-                }
+                // Temporarily disabled to test routing
+                // var response = await Http.GetFromJsonAsync<FirstRunResponse>("api/auth/check-first-run");
+                // if (response?.IsFirstRun == true)
+                // {
+                //     Navigation.NavigateTo("/setup");
+                // }
             }
         }
         catch (Exception ex)
