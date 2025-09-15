@@ -122,9 +122,20 @@
     {
         Logger.LogInformation("Login page initialized");
 
-        // Check for error in query string
+        // Check for error or signout in query string
         var uri = new Uri(Navigation.Uri);
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+
+        // If signout=true, clear the parameter but continue loading the page
+        var signoutParam = query["signout"];
+        if (signoutParam == "true")
+        {
+            Logger.LogInformation("User signed out, showing login page");
+            // Clear the signout parameter from the URL but continue initialization
+            Navigation.NavigateTo("/login", replace: true);
+            // Don't return early - we still need to load auth config
+        }
+
         var errorParam = query["error"];
         if (!string.IsNullOrEmpty(errorParam))
         {

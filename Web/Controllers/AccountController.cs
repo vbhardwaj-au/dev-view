@@ -18,16 +18,17 @@ namespace Web.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult SignIn(string returnUrl = "/process-auth")
+        public async Task<IActionResult> SignIn(string returnUrl = "/process-auth")
         {
             _logger.LogInformation("SignIn initiated with returnUrl: {ReturnUrl}", returnUrl);
             _logger.LogInformation("User authenticated: {IsAuth}, User: {Name}", User?.Identity?.IsAuthenticated, User?.Identity?.Name);
 
-            // Check if user is already authenticated
+            // Clear any stale authentication cookies first
             if (User?.Identity?.IsAuthenticated == true)
             {
-                _logger.LogInformation("User already authenticated, redirecting to process-auth");
-                return Redirect("/process-auth");
+                _logger.LogInformation("User already authenticated, clearing and re-authenticating");
+                // Clear existing cookies to force re-authentication
+                await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             }
 
             // After Azure AD authentication, redirect to process-auth page
@@ -44,12 +45,30 @@ namespace Web.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult SignOut()
+        public async Task<IActionResult> SignOut()
         {
-            var callbackUrl = Url.Content("~/");
-            return SignOut(new AuthenticationProperties { RedirectUri = callbackUrl },
-                CookieAuthenticationDefaults.AuthenticationScheme,
-                OpenIdConnectDefaults.AuthenticationScheme);
+            _logger.LogInformation("SignOut initiated");
+
+            // Clear all authentication cookies
+            Response.Cookies.Delete("DevViewAuth");
+            Response.Cookies.Delete(".AspNetCore.Cookies");
+            Response.Cookies.Delete(".AspNetCore.CookiesC1");
+            Response.Cookies.Delete(".AspNetCore.CookiesC2");
+
+            // Sign out from both schemes
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+            try
+            {
+                await HttpContext.SignOutAsync(OpenIdConnectDefaults.AuthenticationScheme);
+            }
+            catch
+            {
+                // Ignore if OpenID Connect is not configured
+            }
+
+            // Redirect to login page with a clear parameter to avoid auto-redirect
+            return Redirect("/login?signout=true");
         }
     }
 }

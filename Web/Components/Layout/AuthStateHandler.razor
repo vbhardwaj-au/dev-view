@@ -1,0 +1,44 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using Web.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ILogger<AuthStateHandler> Logger
+@inject IHttpContextAccessor HttpContextAccessor
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                // Check if we have cookie auth but no JWT token
+                var httpContext = HttpContextAccessor.HttpContext;
+                if (httpContext?.User?.Identity?.IsAuthenticated == true)
+                {
+                    // Check if we have a JWT token
+                    var token = await JS.InvokeAsync<string>("authHelper.getToken", TimeSpan.FromSeconds(1));
+
+                    if (string.IsNullOrEmpty(token))
+                    {
+                        // We have Azure AD cookie auth but no JWT token
+                        // This means we just completed Azure AD auth and need to generate JWT
+                        Logger.LogInformation("Detected Azure AD authentication without JWT token, redirecting to process-auth");
+
+                        // Check if we're not already on process-auth page to avoid loops
+                        var currentPath = Navigation.Uri;
+                        if (!currentPath.Contains("/process-auth") && !currentPath.Contains("/login"))
+                        {
+                            Navigation.NavigateTo("/process-auth", forceLoad: true);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error in AuthStateHandler");
+            }
+        }
+    }
+}

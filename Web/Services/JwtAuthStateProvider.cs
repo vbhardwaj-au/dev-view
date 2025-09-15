@@ -30,23 +30,24 @@ namespace Web.Services
                 return _cachedAuthState;
             }
 
-            // First check if we have cookie authentication (from Azure AD)
-            var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext?.User?.Identity?.IsAuthenticated == true)
-            {
-                _logger.LogInformation("Cookie authentication detected for user: {Name}", httpContext.User.Identity.Name);
-                _cachedAuthState = new AuthenticationState(httpContext.User);
-                _isInitialized = true;
-                return _cachedAuthState;
-            }
-
             try
             {
-                // Try to get JWT token from localStorage
+                // Always try to get JWT token from localStorage first
+                // This is our primary authentication mechanism that includes roles
                 var token = await _jsRuntime.InvokeAsync<string>("authHelper.getToken", TimeSpan.FromSeconds(2));
                 
                 if (string.IsNullOrEmpty(token))
                 {
+                    // No JWT token, check for cookie authentication (from Azure AD)
+                    var httpContext = _httpContextAccessor.HttpContext;
+                    if (httpContext?.User?.Identity?.IsAuthenticated == true)
+                    {
+                        _logger.LogInformation("No JWT token found, but cookie authentication detected for user: {Name}", httpContext.User.Identity.Name);
+                        _logger.LogWarning("Cookie authentication alone does not provide roles. User should complete Azure AD callback to get JWT token.");
+                        // Return cookie auth but don't cache it - we want to check for JWT token next time
+                        return new AuthenticationState(httpContext.User);
+                    }
+
                     _cachedAuthState = new AuthenticationState(_anonymous);
                     _isInitialized = true;
                     return _cachedAuthState;
@@ -77,8 +78,8 @@ namespace Web.Services
                 
                 // Set token for HTTP client
                 BearerHandler.Token = token;
-                
-                _logger.LogInformation($"Authentication restored for user: {name}");
+
+                _logger.LogInformation("Authentication restored for user: {Name} with roles: [{Roles}]", name, string.Join(", ", roles));
                 _cachedAuthState = new AuthenticationState(user);
                 _isInitialized = true;
                 return _cachedAuthState;
@@ -190,17 +191,28 @@ namespace Web.Services
                         {
                             var roleValue = role.GetString();
                             if (!string.IsNullOrEmpty(roleValue))
+                            {
                                 roles.Add(roleValue);
+                                _logger.LogDebug("Found role in JWT: {Role}", roleValue);
+                            }
                         }
                     }
                     else if (rolesElement.ValueKind == JsonValueKind.String)
                     {
                         var roleValue = rolesElement.GetString();
                         if (!string.IsNullOrEmpty(roleValue))
+                        {
                             roles.Add(roleValue);
+                            _logger.LogDebug("Found role in JWT: {Role}", roleValue);
+                        }
                     }
                 }
-                
+                else
+                {
+                    _logger.LogWarning("No roles found in JWT token - looked for claim type: http://schemas.microsoft.com/ws/2008/06/identity/claims/role");
+                }
+
+                _logger.LogInformation("Parsed JWT token for user: {Name} with {RoleCount} role(s)", name, roles.Count);
                 return (name, roles.ToArray());
             }
             catch (Exception ex)

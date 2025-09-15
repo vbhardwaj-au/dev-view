@@ -80,6 +80,12 @@ if (azureAdEnabled)
         builder.Configuration.GetSection("AzureAd").Bind(options);
         options.SaveTokens = true; // Save tokens in the auth cookie
 
+        // Request additional scopes for user profile information
+        options.Scope.Add("openid");
+        options.Scope.Add("profile");
+        options.Scope.Add("email");
+        options.Scope.Add("User.Read");
+
         // Fix correlation issues in development
         options.Events = new OpenIdConnectEvents
         {
@@ -107,6 +113,15 @@ if (azureAdEnabled)
                     context.Principal?.Identity?.Name,
                     context.Principal?.FindFirst("preferred_username")?.Value ?? context.Principal?.FindFirst("email")?.Value,
                     context.Principal?.FindFirst("oid")?.Value);
+
+                // Log ALL claims for debugging
+                if (context.Principal?.Claims != null)
+                {
+                    foreach (var claim in context.Principal.Claims)
+                    {
+                        logger.LogInformation("Azure AD Claim: {Type} = {Value}", claim.Type, claim.Value);
+                    }
+                }
 
                 // The cookie auth is now established, we'll process the user on the client side
                 return Task.CompletedTask;

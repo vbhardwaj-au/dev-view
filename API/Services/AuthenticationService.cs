@@ -220,8 +220,11 @@ namespace API.Services
                 }
                 
                 var roles = await GetUserRolesAsync(user.Id);
+                _logger.LogInformation("User {Username} (ID: {Id}) has roles: {Roles}",
+                    user.Username, user.Id, string.Join(", ", roles));
+
                 var token = await GenerateJwtTokenAsync(user, roles);
-                
+
                 return new AuthResult
                 {
                     Success = true,
