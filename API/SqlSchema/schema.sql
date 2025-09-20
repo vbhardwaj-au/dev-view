@@ -305,6 +305,7 @@ CREATE TABLE AuthUsers (
     CONSTRAINT CK_AuthUsers_AuthProvider CHECK (AuthProvider IN ('Database', 'AzureAd'))
 );
 
+
 CREATE TABLE AuthRoles (
     Id INT IDENTITY(1,1) PRIMARY KEY,
     Name NVARCHAR(50) NOT NULL UNIQUE,
