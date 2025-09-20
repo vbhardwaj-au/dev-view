@@ -1,11 +1,15 @@
 @inherits LayoutComponentBase
+@inject NavigationManager Navigation
 
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+    @if (!IsLoginOrSetupPage())
+    {
+        <div class="sidebar">
+            <NavMenu />
+        </div>
+    }
 
-    <main>
+    <main class="@(IsLoginOrSetupPage() ? "no-sidebar" : "")">
         <article class="content px-4">
             @Body
         </article>
@@ -22,3 +26,13 @@
 <AuthStateHandler />
 
 <!-- Chart.js and committerCharts.js are loaded in App.razor -->
+
+@code {
+    private bool IsLoginOrSetupPage()
+    {
+        var uri = Navigation.Uri;
+        return uri.Contains("/login", StringComparison.OrdinalIgnoreCase) ||
+               uri.Contains("/setup", StringComparison.OrdinalIgnoreCase) ||
+               uri.Contains("/process-auth", StringComparison.OrdinalIgnoreCase);
+    }
+}

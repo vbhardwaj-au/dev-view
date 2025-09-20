@@ -168,10 +168,16 @@ namespace Web.Services
                     var exp = expElement.GetInt64();
                     var expDate = DateTimeOffset.FromUnixTimeSeconds(exp);
                     var now = DateTimeOffset.UtcNow;
-                    
+
                     if (expDate < now)
                     {
-                        _logger.LogInformation("Token is expired");
+                        _logger.LogInformation("Token is expired - expDate: {ExpDate}, now: {Now}", expDate, now);
+                        // Clear the expired token
+                        try
+                        {
+                            _jsRuntime.InvokeVoidAsync("authHelper.removeToken").AsTask().Wait(TimeSpan.FromMilliseconds(500));
+                        }
+                        catch { }
                         return ("", Array.Empty<string>());
                     }
                 }

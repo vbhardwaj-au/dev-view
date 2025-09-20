@@ -338,3 +338,29 @@ CREATE INDEX IX_AuthUsers_AzureAdObjectId ON AuthUsers(AzureAdObjectId);
 CREATE INDEX IX_AuthUsers_AuthProvider ON AuthUsers(AuthProvider);
 CREATE INDEX IX_AuthUserRoles_UserId ON AuthUserRoles(UserId);
 CREATE INDEX IX_AuthUserRoles_RoleId ON AuthUserRoles(RoleId);
+
+-- View for AuthUserDetails with roles
+IF OBJECT_ID('dbo.vw_AuthUserDetails','V') IS NOT NULL DROP VIEW dbo.vw_AuthUserDetails;
+GO
+
+CREATE VIEW vw_AuthUserDetails AS
+SELECT
+    u.Id,
+    u.Username,
+    u.DisplayName,
+    u.Email,
+    u.JobTitle,
+    u.Department,
+    u.AuthProvider,
+    u.AzureAdObjectId,
+    u.IsActive,
+    u.CreatedOn,
+    u.ModifiedOn,
+    STRING_AGG(r.Name, ',') AS Roles
+FROM AuthUsers u
+LEFT JOIN AuthUserRoles ur ON ur.UserId = u.Id
+LEFT JOIN AuthRoles r ON r.Id = ur.RoleId
+GROUP BY
+    u.Id, u.Username, u.DisplayName, u.Email, u.JobTitle, u.Department,
+    u.AuthProvider, u.AzureAdObjectId, u.IsActive, u.CreatedOn, u.ModifiedOn;
+GO

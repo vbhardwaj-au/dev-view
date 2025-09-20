@@ -45,7 +45,7 @@ namespace Web.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public async Task<IActionResult> SignOut()
+        public new async Task<IActionResult> SignOut()
         {
             _logger.LogInformation("SignOut initiated");
 

@@ -30,11 +30,18 @@ cd API && dotnet run
 cd Web && dotnet run
 cd AutoSync && dotnet run
 
+# Run with specific environment
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project API
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project Web
+
 # Build solution
 dotnet build
 
 # Run tests
 dotnet test
+
+# Clean solution
+dotnet clean
 ```
 
 ### Database Setup
@@ -159,6 +166,12 @@ Main tables:
 4. User auto-created in AuthUsers table if new
 5. JWT token generated for API access
 
+### JWT Token Management
+- Token stored in localStorage as 'jwtToken'
+- Automatic token refresh before expiration
+- Token added to API requests via Authorization header
+- Expiration: 30 days (configurable in appsettings.json)
+
 ## Sync Modes
 - **Full Sync**: Historical data in configurable batches (default 10 days)
 - **Delta Sync**: Recent changes only (configurable days)
@@ -184,3 +197,49 @@ Main tables:
 - JWT tokens expire after 30 days
 - CORS configured for specific ports - update if changing ports
 - File classification is automatic with admin-only modification rights
+
+## Testing & Quality Checks
+
+### Run Tests
+```bash
+# Run all tests
+dotnet test
+
+# Run specific test project
+dotnet test API.Tests/API.Tests.csproj
+
+# Run with coverage
+dotnet test --collect:"XPlat Code Coverage"
+```
+
+### Code Quality
+```bash
+# Check for build warnings
+dotnet build --warnaserror
+
+# Format code
+dotnet format
+
+# Restore packages
+dotnet restore
+```
+
+## Common Development Scenarios
+
+### Working with Authentication
+- Check current user auth: `AuthService.IsAuthenticated()` in Web project
+- Get user claims: `AuthService.GetUserClaims()` returns username, userId, role
+- Admin-only features: Check `role == "Admin"` in authorization logic
+- Azure AD testing: Set `AzureAd:Enabled` to `true` in appsettings.json
+
+### Debugging Sync Issues
+- Check AutoSync logs in console output
+- Verify Bitbucket credentials in API/appsettings.json
+- Test individual sync: Use API endpoints `/api/sync/*`
+- Rate limiting: AutoSync respects Bitbucket API limits automatically
+
+### Adding New Features
+- API endpoints: Add to `API/Endpoints/` folder using minimal API pattern
+- Blazor pages: Create in `Web/Components/Pages/` with `@page` directive
+- Data models: Add to `Data/Models/` and create corresponding repository
+- Services: Place in appropriate project's `Services/` folder

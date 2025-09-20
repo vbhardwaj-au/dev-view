@@ -72,9 +72,9 @@ builder.Services.AddScoped(sp =>
 // Server-side auth for component [Authorize]
 if (azureAdEnabled)
 {
-    // AddMicrosoftIdentityWebApp automatically configures cookie authentication
-    // So we just need to set the authentication schemes
-    builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
+    // For hybrid mode, use Cookie as default scheme, not OpenIdConnect
+    // This prevents automatic redirect to Azure AD
+    builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddMicrosoftIdentityWebApp(options =>
     {
         builder.Configuration.GetSection("AzureAd").Bind(options);

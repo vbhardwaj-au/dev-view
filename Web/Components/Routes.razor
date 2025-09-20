@@ -56,14 +56,14 @@
 </CascadingAuthenticationState>
 
 @code {
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         // Temporarily disabled API call to test routing
         // Check if this is first run and redirect to setup if needed
         try
         {
             var currentPath = Navigation.Uri;
-            
+
             // Don't check if already on setup page
             if (!currentPath.Contains("/setup"))
             {

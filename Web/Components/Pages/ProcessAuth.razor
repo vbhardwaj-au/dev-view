@@ -8,6 +8,7 @@
 @inject ILogger<ProcessAuth> Logger
 @inject IJSRuntime JS
 @rendermode InteractiveServer
+@implements IDisposable
 
 <div class="container mt-5 text-center">
     <h3>Processing authentication...</h3>
@@ -19,13 +20,21 @@
 
 @code {
     private string statusMessage = "Please wait while we complete your sign-in.";
+    private bool isProcessing = false;
+    private bool isDisposed = false;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender && !isProcessing)
         {
+            isProcessing = true;
             await ProcessAuthentication();
         }
+    }
+
+    public void Dispose()
+    {
+        isDisposed = true;
     }
 
     private async Task ProcessAuthentication()
@@ -56,6 +65,24 @@
 
             if (user?.Identity?.IsAuthenticated == true)
             {
+                // Check if this is already a JWT-authenticated user (already processed)
+                if (user.Identity.AuthenticationType == "JwtAuth" ||
+                    user.Claims.Any(c => c.Type == ClaimTypes.Role))
+                {
+                    Logger.LogInformation("ProcessAuth: User already authenticated with JWT - {Name}", user.Identity.Name);
+                    statusMessage = "Already authenticated. Redirecting to dashboard...";
+                    StateHasChanged();
+
+                    await Task.Delay(500);
+
+                    // Check if component is still active before navigation
+                    if (!isDisposed)
+                    {
+                        Navigation.NavigateTo("/dashboard", forceLoad: true);
+                    }
+                    return;
+                }
+
                 Logger.LogInformation("ProcessAuth: User authenticated via Azure AD - {Name}", user.Identity.Name);
                 statusMessage = "Creating your session...";
                 StateHasChanged();
@@ -71,7 +98,12 @@
                     StateHasChanged();
 
                     await Task.Delay(500); // Brief delay to show success message
-                    Navigation.NavigateTo("/dashboard", forceLoad: true);
+
+                    // Check if component is still active before navigation
+                    if (!isDisposed)
+                    {
+                        Navigation.NavigateTo("/dashboard", forceLoad: true);
+                    }
                 }
                 else
                 {
@@ -80,7 +112,13 @@
                     StateHasChanged();
 
                     await Task.Delay(2000);
-                    Navigation.NavigateTo($"/login?error={Uri.EscapeDataString(result.ErrorMessage ?? "Authentication failed")}", forceLoad: true);
+
+                    // Check if component is still active before navigation
+                    if (!isDisposed)
+                    {
+                        var errorParam = Uri.EscapeDataString(result.ErrorMessage ?? "Authentication failed");
+                        Navigation.NavigateTo($"/login?error={errorParam}", forceLoad: true);
+                    }
                 }
             }
             else
@@ -90,17 +128,26 @@
                 StateHasChanged();
 
                 await Task.Delay(1000);
-                Navigation.NavigateTo("/login?error=notauthenticated", forceLoad: true);
+
+                // Check if component is still active before navigation
+                if (!isDisposed)
+                {
+                    Navigation.NavigateTo("/login?error=notauthenticated", forceLoad: true);
+                }
             }
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "ProcessAuth: Error processing authentication");
             statusMessage = $"Error: {ex.Message}";
-            StateHasChanged();
 
-            await Task.Delay(2000);
-            Navigation.NavigateTo("/login?error=callback", forceLoad: true);
+            // Only update UI if component is still active
+            if (!isDisposed)
+            {
+                StateHasChanged();
+                await Task.Delay(2000);
+                Navigation.NavigateTo("/login?error=callback", forceLoad: true);
+            }
         }
     }
 }

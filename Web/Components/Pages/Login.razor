@@ -12,6 +12,7 @@
 @inject ILogger<Login> Logger
 @inject IConfiguration Configuration
 @inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
 
 <div class="container mt-5" style="max-width:420px;">
@@ -121,6 +122,22 @@
     protected override async Task OnInitializedAsync()
     {
         Logger.LogInformation("Login page initialized");
+
+        // First check if user is already authenticated with a valid JWT token
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            if (authState?.User?.Identity?.IsAuthenticated == true)
+            {
+                Logger.LogInformation("User is already authenticated, redirecting to dashboard");
+                Navigation.NavigateTo("/dashboard", forceLoad: false);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error checking authentication state");
+        }
 
         // Check for error or signout in query string
         var uri = new Uri(Navigation.Uri);
