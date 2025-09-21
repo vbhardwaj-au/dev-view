@@ -377,19 +377,20 @@ CREATE TABLE GitConnections (
     Name NVARCHAR(100) NOT NULL,
     GitServerType NVARCHAR(50) NOT NULL, -- 'Bitbucket', 'GitHub', 'GitLab', 'AzureDevOps'
     ApiBaseUrl NVARCHAR(500) NOT NULL,
-    ConsumerKey NVARCHAR(500),
+    ConsumerKey NVARCHAR(200),
     ConsumerSecret NVARCHAR(500),
     AccessToken NVARCHAR(500),
-    RefreshToken NVARCHAR(500),
-    PersonalAccessToken NVARCHAR(500),
     Username NVARCHAR(100),
-    AppPassword NVARCHAR(500),
+    Password NVARCHAR(500),
+    PersonalAccessToken NVARCHAR(500),
     IsActive BIT NOT NULL DEFAULT 0,
-    LastSyncDate DATETIME2,
+    Priority INT NOT NULL DEFAULT 0,
+    Workspace NVARCHAR(100),
     CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
     UpdatedAt DATETIME2,
     CreatedBy NVARCHAR(100),
-    UpdatedBy NVARCHAR(100)
+    UpdatedBy NVARCHAR(100),
+    AdditionalSettings NVARCHAR(MAX)
 );
 
 -- Ensure only one connection can be active at a time
