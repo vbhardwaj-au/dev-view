@@ -31,6 +31,9 @@ builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<WorkspaceService>();
 builder.Services.AddScoped<BitbucketUrlService>();
 
+// Add Data layer services
+builder.Services.AddScoped<Data.Repositories.SettingsRepository>();
+
 // Check if Azure AD is enabled
 var azureAdEnabled = builder.Configuration.GetValue<bool>("AzureAd:Enabled", false);
 
@@ -158,6 +161,9 @@ if (azureAdEnabled)
 }
 else
 {
+    // Add Razor Pages (required for MapRazorPages even when not using Azure AD)
+    builder.Services.AddRazorPages();
+
     // Cookie authentication for database users
     builder.Services.AddAuthentication("DevView")
         .AddCookie("DevView", options =>

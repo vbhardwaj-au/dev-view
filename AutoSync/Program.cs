@@ -21,7 +21,9 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Generic; // Added for Dictionary
 using System.Linq; // Added for ToDictionary and Min
 using Data.Models;
+using Data.Repositories; // Added for GitConnectionRepository
 using Integration.Users; // Added this line
+using System.Text.Json; // For JSON serialization
 
 namespace tVar.AutoSync
 {
@@ -36,17 +38,108 @@ namespace tVar.AutoSync
                 .Build();
 
             var connectionString = config.GetConnectionString("DefaultConnection");
-            var bitbucketSection = config.GetSection("Bitbucket");
-            var bitbucketConfig = bitbucketSection.Get<BitbucketConfig>() ?? new BitbucketConfig();
-            bitbucketConfig.DbConnectionString = config.GetConnectionString("DefaultConnection"); // Explicitly set DbConnectionString
-            int batchDays = config.GetValue<int?>("AutoSyncBatchDays") ?? 10;
-            var syncSettings = config.GetSection("SyncSettings").Get<SyncSettings>() ?? new SyncSettings(); // Load SyncSettings
+
+            // Initialize SettingsRepository to read settings from database
+            var settingsRepo = new SettingsRepository(config);
+            Console.WriteLine("\n=== Reading Settings from Database ===");
+            Console.WriteLine($"Connection String: {connectionString.Substring(0, 50)}...");
+
+            // Get Git connection from database instead of appsettings.json
+            var gitConnectionRepo = new GitConnectionRepository(config);
+            var gitConnection = await gitConnectionRepo.GetActiveBitbucketConnectionAsync();
+
+            if (gitConnection == null)
+            {
+                Console.WriteLine("ERROR: No active Bitbucket connection found in database. Please configure a connection in Admin > Git Connections.");
+                return;
+            }
+
+            Console.WriteLine($"Using Git connection: {gitConnection.Name} [{gitConnection.GitServerType}]");
+
+            // Create BitbucketConfig from database connection
+            var bitbucketConfig = new BitbucketConfig
+            {
+                DbConnectionString = connectionString,
+                ApiBaseUrl = gitConnection.ApiBaseUrl,
+                ConsumerKey = gitConnection.ConsumerKey,
+                ConsumerSecret = gitConnection.ConsumerSecret
+            };
+
+            // Read AutoSyncBatchDays from database
+            int batchDays = 10; // Default
+            try
+            {
+                var batchDaysStr = await settingsRepo.GetValueAsync("AutoSync", "AutoSyncBatchDays");
+                if (!string.IsNullOrEmpty(batchDaysStr))
+                {
+                    batchDays = int.Parse(batchDaysStr);
+                    Console.WriteLine($"✓ AutoSyncBatchDays from DB: {batchDays}");
+                }
+                else
+                {
+                    Console.WriteLine($"⚠ AutoSyncBatchDays not found in DB, using default: {batchDays}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ Error reading AutoSyncBatchDays from DB: {ex.Message}, using default: {batchDays}");
+            }
+
+            // Read SyncSettings from database
+            var syncSettings = new SyncSettings(); // Default
+            try
+            {
+                var syncSettingsJson = await settingsRepo.GetValueAsync("AutoSync", "SyncSettings");
+                if (!string.IsNullOrEmpty(syncSettingsJson))
+                {
+                    syncSettings = JsonSerializer.Deserialize<SyncSettings>(syncSettingsJson) ?? new SyncSettings();
+                    Console.WriteLine($"✓ SyncSettings from DB:");
+                    Console.WriteLine($"  - Mode: {syncSettings.Mode}");
+                    Console.WriteLine($"  - DeltaSyncDays: {syncSettings.DeltaSyncDays}");
+                    Console.WriteLine($"  - Overwrite: {syncSettings.Overwrite}");
+                    Console.WriteLine($"  - SyncTargets:");
+                    Console.WriteLine($"    • Commits: {syncSettings.SyncTargets.Commits}");
+                    Console.WriteLine($"    • PullRequests: {syncSettings.SyncTargets.PullRequests}");
+                    Console.WriteLine($"    • Repositories: {syncSettings.SyncTargets.Repositories}");
+                    Console.WriteLine($"    • Users: {syncSettings.SyncTargets.Users}");
+                }
+                else
+                {
+                    Console.WriteLine($"⚠ SyncSettings not found in DB, using defaults");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ Error reading SyncSettings from DB: {ex.Message}, using defaults");
+            }
+
+            // Read additional AutoSync settings from database
+            try
+            {
+                var pollingInterval = await settingsRepo.GetValueAsync("AutoSync", "PollingInterval");
+                if (!string.IsNullOrEmpty(pollingInterval))
+                    Console.WriteLine($"✓ PollingInterval from DB: {pollingInterval} seconds");
+
+                var maxRetries = await settingsRepo.GetValueAsync("AutoSync", "MaxRetries");
+                if (!string.IsNullOrEmpty(maxRetries))
+                    Console.WriteLine($"✓ MaxRetries from DB: {maxRetries}");
+
+                var retryDelay = await settingsRepo.GetValueAsync("AutoSync", "RetryDelaySeconds");
+                if (!string.IsNullOrEmpty(retryDelay))
+                    Console.WriteLine($"✓ RetryDelaySeconds from DB: {retryDelay} seconds");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ Error reading additional settings: {ex.Message}");
+            }
 
             // SyncTargets in SyncSettings controls enabled data types
 
-            Console.WriteLine($"Starting tVar.AutoSync with batch size: {batchDays} days");
+            Console.WriteLine($"\n=== AutoSync Configuration Summary ===");
+            Console.WriteLine($"Batch Size: {batchDays} days");
             Console.WriteLine($"Sync Mode: {syncSettings.Mode}, Overwrite: {syncSettings.Overwrite}");
             Console.WriteLine($"Targets → Commits: {syncSettings.SyncTargets.Commits}, PullRequests: {syncSettings.SyncTargets.PullRequests}, Repositories: {syncSettings.SyncTargets.Repositories}, Users: {syncSettings.SyncTargets.Users}");
+            Console.WriteLine("======================================\n");
 
             // Minimal logger for Integration services
             using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
@@ -54,9 +147,38 @@ namespace tVar.AutoSync
             var prLogger = loggerFactory.CreateLogger<BitbucketPullRequestsService>();
             var diffParserLogger = loggerFactory.CreateLogger<DiffParserService>();
             var fileClassificationLogger = loggerFactory.CreateLogger<FileClassificationService>(); // Added logger for FileClassificationService
+            var dbFileClassificationLogger = loggerFactory.CreateLogger<Integration.Utils.DatabaseFileClassificationService>(); // Added logger for DatabaseFileClassificationService
             var userLogger = loggerFactory.CreateLogger<BitbucketUsersService>(); // Added logger for BitbucketUsersService
 
-            var fileClassificationService = new FileClassificationService(config, fileClassificationLogger); // Passed config and logger
+            // Check if file classification settings exist in database
+            try
+            {
+                var fileClassConfig = await settingsRepo.GetFileClassificationConfigAsync();
+                if (fileClassConfig != null)
+                {
+                    Console.WriteLine($"\n✓ File Classification loaded from database");
+                    Console.WriteLine($"  - Data Files Extensions: {fileClassConfig.DataFiles.Extensions.Count} items");
+                    Console.WriteLine($"  - Config Files Extensions: {fileClassConfig.ConfigFiles.Extensions.Count} items");
+                    Console.WriteLine($"  - Code Files Extensions: {fileClassConfig.CodeFiles.Extensions.Count} items");
+                    Console.WriteLine($"  - Test Files Extensions: {fileClassConfig.TestFiles.Extensions.Count} items");
+                    Console.WriteLine($"  - Documentation Files Extensions: {fileClassConfig.DocumentationFiles.Extensions.Count} items");
+                    Console.WriteLine($"  - Default Type: {fileClassConfig.Rules.DefaultType}");
+                    Console.WriteLine($"  - Case Sensitive: {fileClassConfig.Rules.CaseSensitive}");
+                    Console.WriteLine($"  - Enable Logging: {fileClassConfig.Rules.EnableLogging}");
+                }
+                else
+                {
+                    Console.WriteLine($"\n⚠ File Classification not found in DB, using appsettings.json");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\n⚠ Error loading File Classification from DB: {ex.Message}");
+            }
+
+            // For now, use appsettings.json for file classification (DB support is available via API)
+            // Use DatabaseFileClassificationService to read from database
+            var fileClassificationService = new Integration.Utils.DatabaseFileClassificationService(settingsRepo, config, dbFileClassificationLogger);
             var diffParser = new DiffParserService(fileClassificationService, diffParserLogger);
 
             var apiClient = new BitbucketApiClient(bitbucketConfig);

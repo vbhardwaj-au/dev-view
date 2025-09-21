@@ -7,7 +7,9 @@
  */
 
 using Data.Models;
+using Data.Repositories;
 using API.Services;
+using API.Endpoints;
 using Integration.Commits;
 using Integration.Common;
 using Integration.PullRequests;
@@ -30,13 +32,24 @@ builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAuthenticationConfigService, AuthenticationConfigService>();
 builder.Services.AddScoped<IMicrosoftGraphService, MicrosoftGraphService>();
 
+// Register repositories
+builder.Services.AddScoped<GitConnectionRepository>();
+builder.Services.AddScoped<SettingsRepository>();
+
+// Register database configuration service
+builder.Services.AddScoped<IDatabaseConfigurationService, DatabaseConfigurationService>();
+
+// Get configuration from database with fallback to appsettings.json
+var settingsRepo = new SettingsRepository(builder.Configuration);
+var dbConfig = new DatabaseConfigurationService(settingsRepo, builder.Configuration);
+
 // Check if Azure AD is enabled
-var azureAdEnabled = builder.Configuration.GetValue<bool>("AzureAd:Enabled", false);
+var azureAdEnabled = dbConfig.GetAzureAdEnabled();
 
 // JWT Auth
-var jwtKey = builder.Configuration["Jwt:Key"];
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "devview-api";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "devview-api";
+var jwtKey = dbConfig.GetJwtKey();
+var jwtIssuer = dbConfig.GetJwtIssuer();
+var jwtAudience = dbConfig.GetJwtAudience();
 
 if (!string.IsNullOrWhiteSpace(jwtKey))
 {
@@ -62,31 +75,101 @@ if (!string.IsNullOrWhiteSpace(jwtKey))
     // Add Azure AD authentication if enabled
     if (azureAdEnabled)
     {
+        // Create Azure AD configuration section from database values
+        var azureAdConfig = new Dictionary<string, string>
+        {
+            ["Instance"] = dbConfig.GetAzureAdInstance(),
+            ["TenantId"] = dbConfig.GetAzureAdTenantId(),
+            ["ClientId"] = dbConfig.GetAzureAdClientId(),
+            ["ClientSecret"] = dbConfig.GetAzureAdClientSecret(),
+            ["CallbackPath"] = dbConfig.GetAzureAdCallbackPath()
+        };
+
+        // Create in-memory configuration section
+        var configBuilder = new ConfigurationBuilder();
+        configBuilder.AddInMemoryCollection(azureAdConfig.Where(kvp => !string.IsNullOrEmpty(kvp.Value)).Select(kvp => new KeyValuePair<string, string?>(kvp.Key, kvp.Value)));
+        var azureAdSection = configBuilder.Build();
+
+        // Use a different scheme name to avoid conflict with JWT Bearer
         authBuilder.AddMicrosoftIdentityWebApi(
-            builder.Configuration.GetSection("AzureAd"),
-            "AzureAd");
+            options => azureAdSection.Bind(options),
+            options => azureAdSection.Bind(options),
+            "AzureAdBearer");
     }
 }
 
-// 1. Create BitbucketConfig from appsettings.json
-var bitbucketConfig = new BitbucketConfig
+// Register BitbucketConfig as scoped service that reads from database
+builder.Services.AddScoped<BitbucketConfig>(serviceProvider =>
 {
-    DbConnectionString = builder.Configuration.GetConnectionString("DefaultConnection"),
-    ApiBaseUrl = builder.Configuration["Bitbucket:ApiBaseUrl"],
-    ConsumerKey = builder.Configuration["Bitbucket:ConsumerKey"],
-    ConsumerSecret = builder.Configuration["Bitbucket:ConsumerSecret"]
-};
+    var config = serviceProvider.GetRequiredService<IConfiguration>();
+    var gitConnectionRepo = serviceProvider.GetRequiredService<GitConnectionRepository>();
+    var gitConnection = gitConnectionRepo.GetActiveBitbucketConnectionAsync().GetAwaiter().GetResult();
 
-// 2. Register config and services for Dependency Injection
-builder.Services.AddSingleton(bitbucketConfig);
+    if (gitConnection == null)
+    {
+        // Fallback to appsettings.json if no database connection configured
+        return new BitbucketConfig
+        {
+            DbConnectionString = config.GetConnectionString("DefaultConnection"),
+            ApiBaseUrl = config["Bitbucket:ApiBaseUrl"],
+            ConsumerKey = config["Bitbucket:ConsumerKey"],
+            ConsumerSecret = config["Bitbucket:ConsumerSecret"]
+        };
+    }
+
+    return new BitbucketConfig
+    {
+        DbConnectionString = config.GetConnectionString("DefaultConnection"),
+        ApiBaseUrl = gitConnection.ApiBaseUrl,
+        ConsumerKey = gitConnection.ConsumerKey,
+        ConsumerSecret = gitConnection.ConsumerSecret
+    };
+});
+
 // The ApiClient must be a singleton to manage the lifecycle of the access token
-builder.Services.AddSingleton<BitbucketApiClient>();
+// Use database connection, fallback to appsettings if no active connection found
+builder.Services.AddSingleton<BitbucketApiClient>(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<IConfiguration>();
+    var connectionString = config.GetConnectionString("DefaultConnection");
+
+    // Try to get active Bitbucket connection from database
+    var gitConnectionRepo = new GitConnectionRepository(config);
+    var gitConnection = gitConnectionRepo.GetActiveBitbucketConnectionAsync().GetAwaiter().GetResult();
+
+    BitbucketConfig bitbucketConfig;
+    if (gitConnection != null)
+    {
+        // Use database connection
+        bitbucketConfig = new BitbucketConfig
+        {
+            DbConnectionString = connectionString,
+            ApiBaseUrl = gitConnection.ApiBaseUrl,
+            ConsumerKey = gitConnection.ConsumerKey,
+            ConsumerSecret = gitConnection.ConsumerSecret
+        };
+    }
+    else
+    {
+        // Fallback to appsettings.json
+        bitbucketConfig = new BitbucketConfig
+        {
+            DbConnectionString = connectionString,
+            ApiBaseUrl = config["Bitbucket:ApiBaseUrl"],
+            ConsumerKey = config["Bitbucket:ConsumerKey"],
+            ConsumerSecret = config["Bitbucket:ConsumerSecret"]
+        };
+    }
+
+    return new BitbucketApiClient(bitbucketConfig);
+});
 builder.Services.AddScoped<BitbucketUsersService>();
 builder.Services.AddScoped<BitbucketRepositoriesService>();
 builder.Services.AddScoped<BitbucketCommitsService>();
 builder.Services.AddScoped<BitbucketPullRequestsService>();
 builder.Services.AddScoped<AnalyticsService>();
-builder.Services.AddScoped<FileClassificationService>();
+// Use DatabaseFileClassificationService for API project to read from database
+builder.Services.AddScoped<FileClassificationService, Integration.Utils.DatabaseFileClassificationService>();
 builder.Services.AddScoped<DiffParserService>();
 builder.Services.AddScoped<CommitRefreshService>(); // Register the new service
 
@@ -132,5 +215,9 @@ if (!string.IsNullOrWhiteSpace(jwtKey))
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Map custom endpoints
+app.MapGitConnectionEndpoints();
+app.MapSettingsEndpoints();
 
 app.Run(); 

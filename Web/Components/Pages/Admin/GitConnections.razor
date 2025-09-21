@@ -1,0 +1,479 @@
+@attribute [Authorize(Roles = "Admin")]
+@page "/admin/gitconnections"
+@using System.Text.Json
+@using System.Net.Http.Headers
+@using Data.Models
+@using Microsoft.AspNetCore.Authorization
+@inject HttpClient Http
+@inject IConfiguration Configuration
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Git Connections - Admin</PageTitle>
+
+<div class="container-fluid">
+    <h1 class="mb-4">Git Connection Management</h1>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <button class="btn btn-primary mb-3" @onclick="ShowAddModal">
+                <i class="bi bi-plus-circle"></i> Add New Connection
+            </button>
+
+            @if (isLoading)
+            {
+                <div class="text-center my-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            }
+            else if (connections != null && connections.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>API URL</th>
+                                <th>Workspace</th>
+                                <th>Status</th>
+                                <th>Priority</th>
+                                <th>Last Updated</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var conn in connections.OrderBy(c => c.Priority).ThenBy(c => c.Name))
+                            {
+                                <tr>
+                                    <td>@conn.Name</td>
+                                    <td>
+                                        <span class="badge bg-info">@GetServerTypeDisplayName(conn.GitServerType)</span>
+                                    </td>
+                                    <td>@conn.ApiBaseUrl</td>
+                                    <td>@(conn.Workspace ?? "-")</td>
+                                    <td>
+                                        @if (conn.IsActive)
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Inactive</span>
+                                        }
+                                    </td>
+                                    <td>@conn.Priority</td>
+                                    <td>@conn.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button class="btn btn-outline-primary" @onclick="() => ShowEditModal(conn)" title="Edit">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button class="btn btn-outline-info" @onclick="() => TestConnection(conn)" title="Test Connection">
+                                                <i class="bi bi-wifi"></i>
+                                            </button>
+                                            <button class="btn btn-outline-warning" @onclick="() => ToggleStatus(conn)" title="Toggle Status">
+                                                @if (conn.IsActive)
+                                                {
+                                                    <i class="bi bi-toggle-on"></i>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi bi-toggle-off"></i>
+                                                }
+                                            </button>
+                                            <button class="btn btn-outline-danger" @onclick="() => DeleteConnection(conn.Id)" title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info" role="alert">
+                    <i class="bi bi-info-circle"></i> No Git connections configured. Click "Add New Connection" to get started.
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert @messageClass alert-dismissible fade show" role="alert">
+            @message
+            <button type="button" class="btn-close" @onclick="() => message = string.Empty"></button>
+        </div>
+    }
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal fade @(showModal ? "show d-block" : "")" tabindex="-1" style="background-color: @(showModal ? "rgba(0,0,0,0.5)" : "transparent");">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@(isEditMode ? "Edit Connection" : "Add New Connection")</h5>
+                <button type="button" class="btn-close" @onclick="CloseModal"></button>
+            </div>
+            <div class="modal-body">
+                @if (editConnection != null)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Connection Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="editConnection.Name" placeholder="e.g., Primary Bitbucket" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Git Server Type <span class="text-danger">*</span></label>
+                        <select class="form-select" @bind="editConnection.GitServerType">
+                            <option value="">Select a type...</option>
+                            <option value="BitbucketCloud">Bitbucket Cloud</option>
+                            <option value="GitHub">GitHub</option>
+                            <option value="GitLab">GitLab</option>
+                            <option value="AzureDevOps">Azure DevOps</option>
+                            <option value="BitbucketServer">Bitbucket Server</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">API Base URL <span class="text-danger">*</span></label>
+                        <input type="url" class="form-control" @bind="editConnection.ApiBaseUrl" placeholder="e.g., https://api.bitbucket.org/2.0/" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Workspace/Organization</label>
+                        <input type="text" class="form-control" @bind="editConnection.Workspace" placeholder="e.g., mycompany" />
+                    </div>
+
+                    @if (editConnection.GitServerType == "BitbucketCloud" || editConnection.GitServerType == "BitbucketServer")
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Consumer Key</label>
+                            <input type="text" class="form-control" @bind="editConnection.ConsumerKey" placeholder="OAuth Consumer Key" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Consumer Secret</label>
+                            <input type="password" class="form-control" @bind="editConnection.ConsumerSecret" placeholder="OAuth Consumer Secret" />
+                        </div>
+                    }
+                    else if (editConnection.GitServerType == "GitHub" || editConnection.GitServerType == "GitLab")
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Personal Access Token</label>
+                            <input type="password" class="form-control" @bind="editConnection.PersonalAccessToken" placeholder="Personal Access Token" />
+                        </div>
+                    }
+                    else if (editConnection.GitServerType == "AzureDevOps")
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Personal Access Token</label>
+                            <input type="password" class="form-control" @bind="editConnection.PersonalAccessToken" placeholder="Azure DevOps PAT" />
+                        </div>
+                    }
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Priority</label>
+                                <input type="number" class="form-control" @bind="editConnection.Priority" min="0" max="999" />
+                                <small class="form-text text-muted">Lower number = higher priority</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <div class="form-check form-switch mt-4">
+                                    <input class="form-check-input" type="checkbox" @bind="editConnection.IsActive" id="activeSwitch">
+                                    <label class="form-check-label" for="activeSwitch">
+                                        Active
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveConnection">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<GitConnection> connections = new();
+    private GitConnection editConnection = new();
+    private bool isLoading = true;
+    private bool showModal = false;
+    private bool isEditMode = false;
+    private string message = string.Empty;
+    private string messageClass = "alert-info";
+    private string apiBaseUrl = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        apiBaseUrl = Configuration["ApiBaseUrl"] ?? "http://localhost:5000";
+        await LoadConnections();
+    }
+
+    private async Task LoadConnections()
+    {
+        isLoading = true;
+        try
+        {
+            var token = await JS.InvokeAsync<string>("localStorage.getItem", "jwtToken");
+            if (!string.IsNullOrEmpty(token))
+            {
+                Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+
+            var response = await Http.GetAsync($"{apiBaseUrl}/api/gitconnections");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                connections = JsonSerializer.Deserialize<List<GitConnection>>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                }) ?? new List<GitConnection>();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                ShowMessage("Unauthorized access. Please check your permissions.", false);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error loading connections: {ex.Message}", false);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowAddModal()
+    {
+        editConnection = new GitConnection
+        {
+            IsActive = true,
+            Priority = 1,
+            GitServerType = "BitbucketCloud"
+        };
+        isEditMode = false;
+        showModal = true;
+    }
+
+    private void ShowEditModal(GitConnection connection)
+    {
+        editConnection = new GitConnection
+        {
+            Id = connection.Id,
+            Name = connection.Name,
+            GitServerType = connection.GitServerType,
+            ApiBaseUrl = connection.ApiBaseUrl,
+            ConsumerKey = connection.ConsumerKey,
+            ConsumerSecret = connection.ConsumerSecret,
+            AccessToken = connection.AccessToken,
+            Username = connection.Username,
+            Password = connection.Password,
+            PersonalAccessToken = connection.PersonalAccessToken,
+            IsActive = connection.IsActive,
+            Priority = connection.Priority,
+            Workspace = connection.Workspace,
+            AdditionalSettings = connection.AdditionalSettings
+        };
+        isEditMode = true;
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editConnection = new();
+    }
+
+    private async Task SaveConnection()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(editConnection.Name) ||
+                string.IsNullOrEmpty(editConnection.GitServerType) ||
+                string.IsNullOrEmpty(editConnection.ApiBaseUrl))
+            {
+                ShowMessage("Please fill in all required fields.", false);
+                return;
+            }
+
+            var token = await JS.InvokeAsync<string>("localStorage.getItem", "jwtToken");
+            if (!string.IsNullOrEmpty(token))
+            {
+                Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+
+            HttpResponseMessage response;
+            var json = JsonSerializer.Serialize(editConnection);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            if (isEditMode)
+            {
+                response = await Http.PutAsync($"{apiBaseUrl}/api/gitconnections/{editConnection.Id}", content);
+            }
+            else
+            {
+                response = await Http.PostAsync($"{apiBaseUrl}/api/gitconnections", content);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                ShowMessage($"Connection {(isEditMode ? "updated" : "created")} successfully.", true);
+                CloseModal();
+                await LoadConnections();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Error saving connection: {error}", false);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error saving connection: {ex.Message}", false);
+        }
+    }
+
+    private async Task TestConnection(GitConnection connection)
+    {
+        try
+        {
+            var token = await JS.InvokeAsync<string>("localStorage.getItem", "jwtToken");
+            if (!string.IsNullOrEmpty(token))
+            {
+                Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+
+            var json = JsonSerializer.Serialize(connection);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            var response = await Http.PostAsync($"{apiBaseUrl}/api/gitconnections/test", content);
+            var resultJson = await response.Content.ReadAsStringAsync();
+            var result = JsonSerializer.Deserialize<TestResult>(resultJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (result?.Success == true)
+            {
+                ShowMessage($"Connection test successful: {result.Message}", true);
+            }
+            else
+            {
+                ShowMessage($"Connection test failed: {result?.Message}", false);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error testing connection: {ex.Message}", false);
+        }
+    }
+
+    private async Task ToggleStatus(GitConnection connection)
+    {
+        try
+        {
+            var token = await JS.InvokeAsync<string>("localStorage.getItem", "jwtToken");
+            if (!string.IsNullOrEmpty(token))
+            {
+                Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+
+            var statusUpdate = new { IsActive = !connection.IsActive };
+            var json = JsonSerializer.Serialize(statusUpdate);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            var response = await Http.PatchAsync($"{apiBaseUrl}/api/gitconnections/{connection.Id}/status", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                ShowMessage($"Connection status updated successfully.", true);
+                await LoadConnections();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Error updating status: {error}", false);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error updating status: {ex.Message}", false);
+        }
+    }
+
+    private async Task DeleteConnection(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this connection?"))
+        {
+            return;
+        }
+
+        try
+        {
+            var token = await JS.InvokeAsync<string>("localStorage.getItem", "jwtToken");
+            if (!string.IsNullOrEmpty(token))
+            {
+                Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+
+            var response = await Http.DeleteAsync($"{apiBaseUrl}/api/gitconnections/{id}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                ShowMessage("Connection deleted successfully.", true);
+                await LoadConnections();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ShowMessage($"Error deleting connection: {error}", false);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Error deleting connection: {ex.Message}", false);
+        }
+    }
+
+    private string GetServerTypeDisplayName(string serverType)
+    {
+        return serverType switch
+        {
+            "BitbucketCloud" => "Bitbucket Cloud",
+            "BitbucketServer" => "Bitbucket Server",
+            "GitHub" => "GitHub",
+            "GitLab" => "GitLab",
+            "AzureDevOps" => "Azure DevOps",
+            _ => serverType
+        };
+    }
+
+    private void ShowMessage(string msg, bool isSuccess)
+    {
+        message = msg;
+        messageClass = isSuccess ? "alert-success" : "alert-danger";
+    }
+
+    private class TestResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+    }
+}

@@ -65,3 +65,21 @@ launchSettings.json
 # Cursor
 .cursor/ PasswordHasher/
 HashGenerator/
+
+# Playwright
+node_modules/
+playwright-report/
+playwright/.cache/
+test-results/
+.playwright/
+*.playwright/
+**/playwright-report/
+**/test-results/
+playwright-tests/
+
+# Node.js
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/

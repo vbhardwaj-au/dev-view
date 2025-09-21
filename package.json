@@ -1,0 +1,24 @@
+{
+  "name": "devview",
+  "version": "1.0.0",
+  "description": "[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![.NET](https://img.shields.io/badge/.NET-9.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/9.0) [![Blazor](https://img.shields.io/badge/Blazor-Server-512BD4)](https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor)",
+  "main": "playwright-tests/test-gitconnections.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vbhardwaj-au/dev-view.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/vbhardwaj-au/dev-view/issues"
+  },
+  "homepage": "https://github.com/vbhardwaj-au/dev-view#readme",
+  "dependencies": {
+    "playwright": "^1.55.0"
+  }
+}

@@ -32,7 +32,7 @@ namespace Integration.Utils
     public class FileClassificationService
     {
         private readonly ILogger<FileClassificationService> _logger;
-        private readonly FileClassificationConfig _config;
+        protected FileClassificationConfig _config;
         private readonly Dictionary<string, FileType> _fileTypeMapping;
 
         public FileClassificationService(IConfiguration configuration, ILogger<FileClassificationService> logger)
@@ -49,7 +49,12 @@ namespace Integration.Utils
             };
         }
 
-        private FileClassificationConfig LoadConfiguration(IConfiguration configuration)
+        protected void UpdateConfiguration(FileClassificationConfig newConfig)
+        {
+            _config = newConfig ?? throw new ArgumentNullException(nameof(newConfig));
+        }
+
+        protected virtual FileClassificationConfig LoadConfiguration(IConfiguration configuration)
         {
             try
             {
@@ -136,7 +141,7 @@ namespace Integration.Utils
             };
         }
 
-        private FileClassificationConfig GetDefaultConfiguration()
+        protected FileClassificationConfig GetDefaultConfiguration()
         {
             return new FileClassificationConfig
             {

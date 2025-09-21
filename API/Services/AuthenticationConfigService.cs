@@ -22,20 +22,20 @@ namespace API.Services
     
     public class AuthenticationConfigService : IAuthenticationConfigService
     {
-        private readonly IConfiguration _configuration;
-        
-        public AuthenticationConfigService(IConfiguration configuration)
+        private readonly IDatabaseConfigurationService _dbConfig;
+
+        public AuthenticationConfigService(IDatabaseConfigurationService dbConfig)
         {
-            _configuration = configuration;
+            _dbConfig = dbConfig;
         }
-        
-        public bool IsAzureAdEnabled => _configuration.GetValue<bool>("AzureAd:Enabled", false);
-        
-        public string DefaultProvider => _configuration.GetValue<string>("Authentication:DefaultProvider", "Database");
-        
-        public bool AllowFallback => _configuration.GetValue<bool>("Authentication:AllowFallback", true);
-        
-        public bool AutoCreateUsers => _configuration.GetValue<bool>("Authentication:AutoCreateUsers", true);
+
+        public bool IsAzureAdEnabled => _dbConfig.GetAzureAdEnabled();
+
+        public string DefaultProvider => _dbConfig.GetAuthenticationDefaultProvider();
+
+        public bool AllowFallback => _dbConfig.GetAuthenticationAllowFallback();
+
+        public bool AutoCreateUsers => _dbConfig.GetAuthenticationAutoCreateUsers();
         
         public AuthenticationMode GetAuthenticationMode()
         {

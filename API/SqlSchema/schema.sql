@@ -365,3 +365,93 @@ GROUP BY
     u.Id, u.Username, u.DisplayName, u.Email, u.JobTitle, u.Department,
     u.AuthProvider, u.AzureAdObjectId, u.IsActive, u.CreatedOn, u.ModifiedOn;
 GO
+
+-- =====================================================
+-- NEW TABLES FOR MULTI-GIT PROVIDER SUPPORT AND CONFIGURATION
+-- =====================================================
+
+-- GitConnections table for managing multiple Git providers (Bitbucket, GitHub, GitLab, etc.)
+IF OBJECT_ID('dbo.GitConnections','U') IS NOT NULL DROP TABLE dbo.GitConnections;
+CREATE TABLE GitConnections (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    Name NVARCHAR(100) NOT NULL,
+    GitServerType NVARCHAR(50) NOT NULL, -- 'Bitbucket', 'GitHub', 'GitLab', 'AzureDevOps'
+    ApiBaseUrl NVARCHAR(500) NOT NULL,
+    ConsumerKey NVARCHAR(500),
+    ConsumerSecret NVARCHAR(500),
+    AccessToken NVARCHAR(500),
+    RefreshToken NVARCHAR(500),
+    PersonalAccessToken NVARCHAR(500),
+    Username NVARCHAR(100),
+    AppPassword NVARCHAR(500),
+    IsActive BIT NOT NULL DEFAULT 0,
+    LastSyncDate DATETIME2,
+    CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    UpdatedAt DATETIME2,
+    CreatedBy NVARCHAR(100),
+    UpdatedBy NVARCHAR(100)
+);
+
+-- Ensure only one connection can be active at a time
+CREATE UNIQUE INDEX IX_GitConnections_IsActive ON GitConnections(IsActive) WHERE IsActive = 1;
+
+-- Settings table for database-driven configuration
+IF OBJECT_ID('dbo.Settings','U') IS NOT NULL DROP TABLE dbo.Settings;
+CREATE TABLE Settings (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    Category NVARCHAR(100) NOT NULL,
+    [Key] NVARCHAR(200) NOT NULL,
+    [Value] NVARCHAR(MAX) NOT NULL,
+    ValueType NVARCHAR(50) NOT NULL DEFAULT 'String', -- String, Number, Boolean, JSON, Array
+    Description NVARCHAR(500),
+    IsActive BIT NOT NULL DEFAULT 1,
+    IsSystem BIT NOT NULL DEFAULT 0, -- System settings cannot be deleted
+    DisplayOrder INT DEFAULT 0,
+    CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    UpdatedAt DATETIME2,
+    CreatedBy NVARCHAR(100) DEFAULT 'System',
+    UpdatedBy NVARCHAR(100) DEFAULT 'System',
+    -- Unique constraint on Category + Key combination
+    CONSTRAINT UQ_Settings_Category_Key UNIQUE (Category, [Key])
+);
+
+-- Index for faster lookups by category
+CREATE INDEX IX_Settings_Category ON Settings(Category);
+
+-- FileClassificationCategories table for file type categorization
+IF OBJECT_ID('dbo.FileClassificationCategories','U') IS NOT NULL DROP TABLE dbo.FileClassificationCategories;
+CREATE TABLE FileClassificationCategories (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    Name NVARCHAR(100) NOT NULL,
+    Description NVARCHAR(500),
+    DisplayOrder INT NOT NULL DEFAULT 0,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CreatedAt DATETIME NOT NULL DEFAULT GETUTCDATE(),
+    UpdatedAt DATETIME NOT NULL DEFAULT GETUTCDATE(),
+    CreatedBy NVARCHAR(100) NOT NULL DEFAULT 'System',
+    UpdatedBy NVARCHAR(100) NOT NULL DEFAULT 'System',
+    CONSTRAINT UX_FileClassificationCategories_Name UNIQUE (Name)
+);
+
+-- FileClassificationRules table for file classification rules
+IF OBJECT_ID('dbo.FileClassificationRules','U') IS NOT NULL DROP TABLE dbo.FileClassificationRules;
+CREATE TABLE FileClassificationRules (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    CategoryId INT NOT NULL,
+    RuleType NVARCHAR(50) NOT NULL, -- 'Extension', 'PathPattern', 'FileNamePattern', 'SpecificFile'
+    Pattern NVARCHAR(500) NOT NULL,
+    Description NVARCHAR(500),
+    Priority INT NOT NULL DEFAULT 0,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CreatedAt DATETIME NOT NULL DEFAULT GETUTCDATE(),
+    UpdatedAt DATETIME NOT NULL DEFAULT GETUTCDATE(),
+    CreatedBy NVARCHAR(100) NOT NULL DEFAULT 'System',
+    UpdatedBy NVARCHAR(100) NOT NULL DEFAULT 'System',
+    CONSTRAINT FK_FileClassificationRules_Category FOREIGN KEY (CategoryId)
+        REFERENCES FileClassificationCategories(Id) ON DELETE CASCADE
+);
+
+-- Create indexes for FileClassificationRules
+CREATE INDEX IX_FileClassificationRules_CategoryId ON FileClassificationRules(CategoryId);
+CREATE INDEX IX_FileClassificationRules_RuleType ON FileClassificationRules(RuleType);
+CREATE INDEX IX_FileClassificationRules_IsActive ON FileClassificationRules(IsActive);

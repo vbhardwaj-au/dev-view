@@ -24,17 +24,20 @@ namespace API.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthenticationService> _logger;
         private readonly IMicrosoftGraphService _graphService;
-        
+        private readonly IDatabaseConfigurationService _dbConfig;
+
         public AuthenticationService(
             IConfiguration configuration,
             ILogger<AuthenticationService> logger,
-            IMicrosoftGraphService graphService)
+            IMicrosoftGraphService graphService,
+            IDatabaseConfigurationService dbConfig)
         {
             _connectionString = configuration.GetConnectionString("DefaultConnection")
                 ?? throw new InvalidOperationException("DefaultConnection not configured");
             _configuration = configuration;
             _logger = logger;
             _graphService = graphService;
+            _dbConfig = dbConfig;
         }
         
         public async Task<AuthResult> AuthenticateAsync(string username, string password)
@@ -449,10 +452,10 @@ namespace API.Services
         
         public async Task<string> GenerateJwtTokenAsync(AuthUser user, string[] roles)
         {
-            var key = _configuration["Jwt:Key"];
-            var issuer = _configuration["Jwt:Issuer"] ?? "devview-api";
-            var audience = _configuration["Jwt:Audience"] ?? "devview-api";
-            
+            var key = await _dbConfig.GetJwtKeyAsync();
+            var issuer = await _dbConfig.GetJwtIssuerAsync();
+            var audience = await _dbConfig.GetJwtAudienceAsync();
+
             if (string.IsNullOrWhiteSpace(key))
             {
                 throw new InvalidOperationException("Jwt:Key not configured");

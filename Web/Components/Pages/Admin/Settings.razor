@@ -1,11 +1,17 @@
-@attribute [Authorize(Roles="Admin")]
 @page "/admin/settings"
+@using Data.Repositories
+@using Microsoft.AspNetCore.Authorization
+@using System.Text.Json
+@using Data.Models
 @using Web.Services
 @using System.Net.Http.Json
+@attribute [Authorize(Roles = "Admin")]
+@inject SettingsRepository SettingsRepository
+@inject ILogger<Settings> Logger
+@inject IJSRuntime JSRuntime
 @inject HttpClient Http
 @inject WorkspaceService WorkspaceService
 @rendermode InteractiveServer
-
 
 <PageTitle>Admin - Settings - DevView</PageTitle>
 
@@ -17,6 +23,7 @@
                 Settings
             </h1>
 
+            @* Global Messages *@
             @if (!string.IsNullOrEmpty(message))
             {
                 <div class="alert @(messageType == "success" ? "alert-success" : "alert-danger") alert-dismissible fade show" role="alert">
@@ -25,55 +32,235 @@
                 </div>
             }
 
-            <!-- Workspace Configuration -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-building me-2"></i>
-                        Workspace Configuration
-                    </h5>
+            @if (!string.IsNullOrEmpty(SuccessMessage))
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    @SuccessMessage
+                    <button type="button" class="btn-close" @onclick="() => SuccessMessage = null"></button>
                 </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="workspaceSelect" class="form-label fw-bold">Select Workspace</label>
-                                @if (workspaces == null)
-                                {
-                                    <div class="d-flex align-items-center">
-                                        <div class="spinner-border spinner-border-sm me-2" role="status">
-                                            <span class="visually-hidden">Loading...</span>
-                                        </div>
-                                        <span>Loading workspaces...</span>
-                                    </div>
-                                }
-                                else if (workspaces.Any())
-                                {
-                                    <select id="workspaceSelect" class="form-select" @bind="selectedWorkspace" @bind:after="() => OnWorkspaceChanged()">
-                                        @foreach (var workspace in workspaces)
+            }
+
+            @if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    @ErrorMessage
+                    <button type="button" class="btn-close" @onclick="() => ErrorMessage = null"></button>
+                </div>
+            }
+
+            @* Tab Navigation *@
+            <ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="sync-tab" data-bs-toggle="tab" data-bs-target="#sync" type="button" role="tab">
+                        <i class="bi bi-cloud-download me-2"></i>Sync & Workspace
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="database-tab" data-bs-toggle="tab" data-bs-target="#database" type="button" role="tab">
+                        <i class="bi bi-database me-2"></i>Database Settings
+                    </button>
+                </li>
+            </ul>
+
+            @* Tab Content *@
+            <div class="tab-content" id="settingsTabContent">
+
+                @* Sync & Workspace Tab *@
+                <div class="tab-pane fade show active" id="sync" role="tabpanel">
+
+                    <!-- Workspace Configuration -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">
+                                <i class="bi bi-building me-2"></i>
+                                Workspace Configuration
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="workspaceSelect" class="form-label fw-bold">Select Workspace</label>
+                                        @if (workspaces == null)
                                         {
-                                            <option value="@workspace">@workspace</option>
+                                            <div class="d-flex align-items-center">
+                                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                                    <span class="visually-hidden">Loading...</span>
+                                                </div>
+                                                <span>Loading workspaces...</span>
+                                            </div>
                                         }
-                                    </select>
-                                    <div class="form-text">
-                                        This workspace will be used across all Dashboard and Admin pages.
+                                        else if (workspaces.Any())
+                                        {
+                                            <select id="workspaceSelect" class="form-select" @bind="selectedWorkspace" @bind:after="() => OnWorkspaceChanged()">
+                                                @foreach (var workspace in workspaces)
+                                                {
+                                                    <option value="@workspace">@workspace</option>
+                                                }
+                                            </select>
+                                            <div class="form-text">
+                                                This workspace will be used across all Dashboard and Admin pages.
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="alert alert-warning">
+                                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                                No workspaces found. Please sync repositories first to discover workspaces.
+                                            </div>
+                                        }
                                     </div>
-                                }
-                                else
-                                {
-                                    <div class="alert alert-warning">
-                                        <i class="bi bi-exclamation-triangle me-2"></i>
-                                        No workspaces found. Please sync repositories first to discover workspaces.
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Actions</label>
+                                        <div>
+                                            <button class="btn btn-outline-primary" @onclick="RefreshWorkspaces" disabled="@isRefreshing">
+                                                @if (isRefreshing)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi bi-arrow-clockwise me-2"></i>
+                                                }
+                                                Refresh Workspaces
+                                            </button>
+                                        </div>
+                                        <div class="form-text">
+                                            Refresh the workspace list from existing repositories.
+                                        </div>
                                     </div>
-                                }
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(selectedWorkspace))
+                            {
+                                <div class="alert alert-success">
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    <strong>Current Workspace:</strong> @selectedWorkspace
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Repository Sync Section -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">
+                                <i class="bi bi-folder-fill me-2"></i>
+                                Repository Sync
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Workspace</label>
+                                        <div>
+                                            <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
+                                        </div>
+                                        <div class="form-text">
+                                            Current workspace for repository sync. Change workspace in the configuration section above.
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold d-block">&nbsp;</label>
+                                        <button class="btn btn-primary" @onclick="SyncRepositories" disabled="@(isSyncingRepos || !WorkspaceService.HasSelectedWorkspace)">
+                                            @if (isSyncingRepos)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-cloud-download me-2"></i>
+                                            }
+                                            Sync Repositories
+                                        </button>
+                                        @if (!WorkspaceService.HasSelectedWorkspace)
+                                        {
+                                            <div class="form-text text-warning">
+                                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                                Please select a workspace first
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Data Sync Section -->
+                    <div class="row">
+                        <!-- Commits Sync -->
                         <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Actions</label>
-                                <div>
-                                    <button class="btn btn-outline-primary" @onclick="RefreshWorkspaces" disabled="@isRefreshing">
-                                        @if (isRefreshing)
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-git me-2"></i>
+                                        Commit Data Sync
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Workspace</label>
+                                        <div>
+                                            <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="commitRepo" class="form-label">Repository Slug</label>
+                                        <input type="text" id="commitRepo" class="form-control" @bind="commitRepo" placeholder="Enter repository slug" />
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Date Range</label>
+                                        <div class="d-flex flex-wrap gap-2 mb-2">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(10)">Last 10 days</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(30)">Last 30 days</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(60)">Last 60 days</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(90)">Last 90 days</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetThisYear">This year</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetLastYear">Last year</button>
+                                        </div>
+                                        <div class="row g-2">
+                                            <div class="col">
+                                                <input type="date" class="form-control" @bind="commitStartDate" />
+                                            </div>
+                                            <div class="col">
+                                                <input type="date" class="form-control" @bind="commitEndDate" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-success w-100" @onclick="SyncCommits" disabled="@(isSyncingCommits || !WorkspaceService.HasSelectedWorkspace || string.IsNullOrWhiteSpace(commitRepo))">
+                                        @if (isSyncingCommits)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-arrow-repeat me-2"></i>
+                                        }
+                                        Sync Commits
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Commit Line Count Refresh -->
+                        <div class="col-md-6">
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-arrow-clockwise me-2"></i>
+                                        Refresh Commit Line Counts
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <p>Re-processes all existing commits to update Code, Data, and Config line counts based on the latest file classification rules.</p>
+                                    <button class="btn btn-warning w-100" @onclick="RefreshCommitLineCounts" disabled="@isRefreshingCommits">
+                                        @if (isRefreshingCommits)
                                         {
                                             <span class="spinner-border spinner-border-sm me-2" role="status"></span>
                                         }
@@ -81,281 +268,367 @@
                                         {
                                             <i class="bi bi-arrow-clockwise me-2"></i>
                                         }
-                                        Refresh Workspaces
+                                        Refresh All Commit Line Counts
                                     </button>
-                                </div>
-                                <div class="form-text">
-                                    Refresh the workspace list from existing repositories.
+                                    <div class="form-text text-muted mt-2">
+                                        This operation might take a long time depending on the number of commits.
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
-                    @if (!string.IsNullOrEmpty(selectedWorkspace))
-                    {
-                        <div class="alert alert-success">
-                            <i class="bi bi-check-circle me-2"></i>
-                            <strong>Current Workspace:</strong> @selectedWorkspace
-                        </div>
-                    }
-                </div>
-            </div>
 
-            <!-- Repository Sync Section -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-folder-fill me-2"></i>
-                        Repository Sync
-                    </h5>
-                </div>
-                <div class="card-body">
+                    <!-- PR Sync Section -->
                     <div class="row">
                         <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Workspace</label>
-                                <div>
-                                    <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-git me-2"></i>
+                                        Pull Request Data Sync
+                                    </h6>
                                 </div>
-                                <div class="form-text">
-                                    Current workspace for repository sync. Change workspace in the configuration section above.
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Workspace</label>
+                                        <div>
+                                            <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="prRepo" class="form-label">Repository Slug</label>
+                                        <input type="text" id="prRepo" class="form-control" @bind="prRepo" placeholder="Enter repository slug" />
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Date Range</label>
+                                        <div class="d-flex flex-wrap gap-2 mb-2">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(10)">Last 10 days</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(30)">Last 30 days</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(60)">Last 60 days</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(90)">Last 90 days</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetPRThisYear">This year</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetPRLastYear">Last year</button>
+                                        </div>
+                                        <div class="row g-2">
+                                            <div class="col">
+                                                <input type="date" class="form-control" @bind="prStartDate" />
+                                            </div>
+                                            <div class="col">
+                                                <input type="date" class="form-control" @bind="prEndDate" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-success w-100" @onclick="SyncPullRequests" disabled="@(isSyncingPRs || !WorkspaceService.HasSelectedWorkspace || string.IsNullOrWhiteSpace(prRepo))">
+                                        @if (isSyncingPRs)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-arrow-repeat me-2"></i>
+                                        }
+                                        Sync Pull Requests
+                                    </button>
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Fix PR Merge Flags -->
                         <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label fw-bold d-block">&nbsp;</label>
-                                <button class="btn btn-primary" @onclick="SyncRepositories" disabled="@(isSyncingRepos || !WorkspaceService.HasSelectedWorkspace)">
-                                    @if (isSyncingRepos)
-                                    {
-                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                                    }
-                                    else
-                                    {
-                                        <i class="bi bi-cloud-download me-2"></i>
-                                    }
-                                    Sync Repositories
-                                </button>
-                                @if (!WorkspaceService.HasSelectedWorkspace)
-                                {
-                                    <div class="form-text text-warning">
-                                        <i class="bi bi-exclamation-triangle me-1"></i>
-                                        Please select a workspace first
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-flag me-2"></i>
+                                        Fix PR Merge Flags
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <p>Identifies and updates the `IsPRMergeCommit` flag for merge commits that are part of a pull request, ensuring accurate data representation.</p>
+                                    <div class="mb-3">
+                                        <label for="fixPrRepoSlug" class="form-label">Repository Slug (Optional)</label>
+                                        <input type="text" id="fixPrRepoSlug" class="form-control" @bind="fixPrRepoSlug" placeholder="Leave empty for all repositories" />
+                                        <div class="form-text">
+                                            Specify a repository slug to fix flags only for that repository, or leave empty to fix for all.
+                                        </div>
                                     </div>
-                                }
+                                    <button class="btn btn-info w-100" @onclick="FixPRMergeFlags">
+                                        <i class="bi bi-tools me-2"></i>
+                                        Fix PR Merge Commits Flags
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            <!-- Data Sync Section -->
-            <div class="row">
-                <!-- Commits Sync -->
-                <div class="col-md-6">
+                    <!-- Revert Commit Detection Section -->
                     <div class="card mb-4">
                         <div class="card-header">
-                            <h6 class="mb-0">
-                                <i class="bi bi-git me-2"></i>
-                                Commit Data Sync
-                            </h6>
+                            <h5 class="mb-0">
+                                <i class="bi bi-arrow-counterclockwise me-2"></i>
+                                Revert Commit Detection
+                            </h5>
                         </div>
                         <div class="card-body">
-                            <div class="mb-3">
-                                <label class="form-label">Workspace</label>
-                                <div>
-                                    <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="commitRepo" class="form-label">Repository Slug</label>
-                                <input type="text" id="commitRepo" class="form-control" @bind="commitRepo" placeholder="Enter repository slug" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Date Range</label>
-                                <div class="d-flex flex-wrap gap-2 mb-2">
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(10)">Last 10 days</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(30)">Last 30 days</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(60)">Last 60 days</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetDateRange(90)">Last 90 days</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetThisYear">This year</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetLastYear">Last year</button>
-                                </div>
-                                <div class="row g-2">
-                                    <div class="col">
-                                        <input type="date" class="form-control" @bind="commitStartDate" />
-                                    </div>
-                                    <div class="col">
-                                        <input type="date" class="form-control" @bind="commitEndDate" />
-                                    </div>
-                                </div>
-                            </div>
-                            <button class="btn btn-success w-100" @onclick="SyncCommits" disabled="@(isSyncingCommits || !WorkspaceService.HasSelectedWorkspace || string.IsNullOrWhiteSpace(commitRepo))">
-                                @if (isSyncingCommits)
+                            <p>
+                                This tool will scan all commits and mark those that are detected as revert commits (e.g., commit messages starting with "Revert").
+                                Revert commits are excluded from analytics and reporting.
+                            </p>
+                            <button class="btn btn-danger w-100" @onclick="IdentifyAndMarkRevertCommits" disabled="@isMarkingReverts">
+                                @if (isMarkingReverts)
                                 {
                                     <span class="spinner-border spinner-border-sm me-2" role="status"></span>
                                 }
                                 else
                                 {
-                                    <i class="bi bi-arrow-repeat me-2"></i>
+                                    <i class="bi bi-search me-2"></i>
                                 }
-                                Sync Commits
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Commit Line Count Refresh -->
-                <div class="col-md-6">
-                    <div class="card mb-4">
-                        <div class="card-header">
-                            <h6 class="mb-0">
-                                <i class="bi bi-arrow-clockwise me-2"></i>
-                                Refresh Commit Line Counts
-                            </h6>
-                        </div>
-                        <div class="card-body">
-                            <p>Re-processes all existing commits to update Code, Data, and Config line counts based on the latest file classification rules.</p>
-                            <button class="btn btn-warning w-100" @onclick="RefreshCommitLineCounts" disabled="@isRefreshingCommits">
-                                @if (isRefreshingCommits)
-                                {
-                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                                }
-                                else
-                                {
-                                    <i class="bi bi-arrow-clockwise me-2"></i>
-                                }
-                                Refresh All Commit Line Counts
+                                Identify & Mark Revert Commits
                             </button>
                             <div class="form-text text-muted mt-2">
-                                This operation might take a long time depending on the number of commits.
+                                This operation will analyze all commit messages and may take a while for large repositories.
                             </div>
+                            @if (!string.IsNullOrEmpty(revertResultMessage))
+                            {
+                                <div class="alert alert-info mt-3">@revertResultMessage</div>
+                            }
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- PR Sync Section -->
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="card mb-4">
+                @* Database Settings Tab *@
+                <div class="tab-pane fade" id="database" role="tabpanel">
+                    <div class="card mb-3">
                         <div class="card-header">
-                            <h6 class="mb-0">
-                                <i class="bi bi-git me-2"></i>
-                                Pull Request Data Sync
-                            </h6>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">Settings Categories</h5>
+                                <button class="btn btn-primary btn-sm" @onclick="ShowAddDialog">
+                                    <i class="bi bi-plus-circle"></i> Add Setting
+                                </button>
+                            </div>
                         </div>
                         <div class="card-body">
-                            <div class="mb-3">
-                                <label class="form-label">Workspace</label>
-                                <div>
-                                    <span class="badge bg-primary fs-6">@(WorkspaceService.SelectedWorkspace ?? "None Selected")</span>
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="prRepo" class="form-label">Repository Slug</label>
-                                <input type="text" id="prRepo" class="form-control" @bind="prRepo" placeholder="Enter repository slug" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Date Range</label>
-                                <div class="d-flex flex-wrap gap-2 mb-2">
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(10)">Last 10 days</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(30)">Last 30 days</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(60)">Last 60 days</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => SetPRDateRange(90)">Last 90 days</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetPRThisYear">This year</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="SetPRLastYear">Last year</button>
-                                </div>
-                                <div class="row g-2">
-                                    <div class="col">
-                                        <input type="date" class="form-control" @bind="prStartDate" />
-                                    </div>
-                                    <div class="col">
-                                        <input type="date" class="form-control" @bind="prEndDate" />
-                                    </div>
-                                </div>
-                            </div>
-                            <button class="btn btn-success w-100" @onclick="SyncPullRequests" disabled="@(isSyncingPRs || !WorkspaceService.HasSelectedWorkspace || string.IsNullOrWhiteSpace(prRepo))">
-                                @if (isSyncingPRs)
+                            <div class="btn-group" role="group">
+                                <button class="btn @(SelectedCategory == "All" ? "btn-primary" : "btn-outline-primary")"
+                                        @onclick="@(() => SelectCategory("All"))">
+                                    All
+                                </button>
+                                @foreach (var category in Categories)
                                 {
-                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                    <button class="btn @(SelectedCategory == category ? "btn-primary" : "btn-outline-primary")"
+                                            @onclick="@(() => SelectCategory(category))">
+                                        @category
+                                    </button>
                                 }
-                                else
-                                {
-                                    <i class="bi bi-arrow-repeat me-2"></i>
-                                }
-                                Sync Pull Requests
-                            </button>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Fix PR Merge Flags -->
-                <div class="col-md-6">
-                    <div class="card mb-4">
+                    <div class="card">
                         <div class="card-header">
-                            <h6 class="mb-0">
-                                <i class="bi bi-flag me-2"></i>
-                                Fix PR Merge Flags
-                            </h6>
+                            <h5 class="mb-0">@(SelectedCategory == "All" ? "All Settings" : $"{SelectedCategory} Settings")</h5>
                         </div>
                         <div class="card-body">
-                            <p>Identifies and updates the `IsPRMergeCommit` flag for merge commits that are part of a pull request, ensuring accurate data representation.</p>
-                            <div class="mb-3">
-                                <label for="fixPrRepoSlug" class="form-label">Repository Slug (Optional)</label>
-                                <input type="text" id="fixPrRepoSlug" class="form-control" @bind="fixPrRepoSlug" placeholder="Leave empty for all repositories" />
-                                <div class="form-text">
-                                    Specify a repository slug to fix flags only for that repository, or leave empty to fix for all.
+                            @if (FilteredSettings.Any())
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-striped table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Category</th>
+                                                <th>Key</th>
+                                                <th>Value</th>
+                                                <th>Type</th>
+                                                <th>Description</th>
+                                                <th>System</th>
+                                                <th>Active</th>
+                                                <th style="width: 120px;">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var setting in FilteredSettings)
+                                            {
+                                                <tr>
+                                                    <td>@setting.Category</td>
+                                                    <td>@setting.Key</td>
+                                                    <td>
+                                                        @if (EditingSettingId == setting.Id)
+                                                        {
+                                                            @if (setting.ValueType == "Boolean")
+                                                            {
+                                                                <select @bind="EditValue" class="form-control form-control-sm">
+                                                                    <option value="true">true</option>
+                                                                    <option value="false">false</option>
+                                                                </select>
+                                                            }
+                                                            else if (setting.ValueType == "Number")
+                                                            {
+                                                                <input type="number" @bind="EditValue" class="form-control form-control-sm" />
+                                                            }
+                                                            else if (setting.ValueType == "Array" || setting.ValueType == "JSON")
+                                                            {
+                                                                <textarea @bind="EditValue" class="form-control form-control-sm" rows="3"></textarea>
+                                                            }
+                                                            else
+                                                            {
+                                                                <input type="text" @bind="EditValue" class="form-control form-control-sm" />
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="@(setting.ValueType == "Array" || setting.ValueType == "JSON" ? "font-monospace small" : "")">
+                                                                @GetDisplayValue(setting)
+                                                            </span>
+                                                        }
+                                                    </td>
+                                                    <td>@setting.ValueType</td>
+                                                    <td>
+                                                        <small class="text-muted">@(string.IsNullOrEmpty(setting.Description) ? "-" : setting.Description)</small>
+                                                    </td>
+                                                    <td>
+                                                        @if (setting.IsSystem)
+                                                        {
+                                                            <span class="badge bg-warning">System</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge bg-secondary">User</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @if (setting.IsActive)
+                                                        {
+                                                            <span class="badge bg-success">Active</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge bg-danger">Inactive</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @if (EditingSettingId == setting.Id)
+                                                        {
+                                                            <button class="btn btn-sm btn-success" @onclick="() => SaveSetting(setting)">
+                                                                <i class="bi bi-check"></i>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-secondary" @onclick="CancelEdit">
+                                                                <i class="bi bi-x"></i>
+                                                            </button>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button class="btn btn-sm btn-primary" @onclick="() => StartEdit(setting)">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </button>
+                                                            @if (!setting.IsSystem)
+                                                            {
+                                                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteSetting(setting)">
+                                                                    <i class="bi bi-trash"></i>
+                                                                </button>
+                                                            }
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
                                 </div>
-                            </div>
-                            <button class="btn btn-info w-100" @onclick="FixPRMergeFlags">
-                                <i class="bi bi-tools me-2"></i>
-                                Fix PR Merge Commits Flags
-                            </button>
+                            }
+                            else
+                            {
+                                <div class="alert alert-info">
+                                    No settings found for the selected category.
+                                </div>
+                            }
                         </div>
                     </div>
                 </div>
             </div>
-
-            <!-- Revert Commit Detection Section -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-arrow-counterclockwise me-2"></i>
-                        Revert Commit Detection
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <p>
-                        This tool will scan all commits and mark those that are detected as revert commits (e.g., commit messages starting with "Revert").
-                        Revert commits are excluded from analytics and reporting.
-                    </p>
-                    <button class="btn btn-danger w-100" @onclick="IdentifyAndMarkRevertCommits" disabled="@isMarkingReverts">
-                        @if (isMarkingReverts)
-                        {
-                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                        }
-                        else
-                        {
-                            <i class="bi bi-search me-2"></i>
-                        }
-                        Identify & Mark Revert Commits
-                    </button>
-                    <div class="form-text text-muted mt-2">
-                        This operation will analyze all commit messages and may take a while for large repositories.
-                    </div>
-                    @if (!string.IsNullOrEmpty(revertResultMessage))
-                    {
-                        <div class="alert alert-info mt-3">@revertResultMessage</div>
-                    }
-                </div>
-            </div>
-
         </div>
     </div>
 </div>
 
+<!-- Add Setting Dialog -->
+@if (ShowAddSettingDialog)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Setting</h5>
+                    <button type="button" class="btn-close" @onclick="CancelAdd"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Category</label>
+                        <input type="text" @bind="NewSetting.Category" class="form-control" placeholder="e.g., Application, AutoSync" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Key</label>
+                        <input type="text" @bind="NewSetting.Key" class="form-control" placeholder="e.g., MaxRetries" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Value Type</label>
+                        <select @bind="NewSetting.ValueType" class="form-control">
+                            <option value="String">String</option>
+                            <option value="Number">Number</option>
+                            <option value="Boolean">Boolean</option>
+                            <option value="JSON">JSON</option>
+                            <option value="Array">Array</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Value</label>
+                        @if (NewSetting.ValueType == "Boolean")
+                        {
+                            <select @bind="NewSetting.Value" class="form-control">
+                                <option value="true">true</option>
+                                <option value="false">false</option>
+                            </select>
+                        }
+                        else if (NewSetting.ValueType == "Number")
+                        {
+                            <input type="number" @bind="NewSetting.Value" class="form-control" />
+                        }
+                        else if (NewSetting.ValueType == "Array" || NewSetting.ValueType == "JSON")
+                        {
+                            <textarea @bind="NewSetting.Value" class="form-control" rows="4"
+                                      placeholder="@GetPlaceholderText()"></textarea>
+                        }
+                        else
+                        {
+                            <input type="text" @bind="NewSetting.Value" class="form-control" />
+                        }
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <input type="text" @bind="NewSetting.Description" class="form-control" placeholder="Optional description" />
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" @bind="NewSetting.IsActive" class="form-check-input" id="isActive" />
+                            <label class="form-check-label" for="isActive">
+                                Active
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" @bind="NewSetting.IsSystem" class="form-check-input" id="isSystem" />
+                            <label class="form-check-label" for="isSystem">
+                                System Setting (cannot be deleted)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelAdd">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="AddSetting">Add Setting</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    // Original Settings functionality variables
     private IEnumerable<string>? workspaces;
     private string selectedWorkspace = string.Empty;
     private bool isRefreshing = false;
@@ -366,7 +639,7 @@
     private DateTime commitStartDate = DateTime.Now.Date.AddDays(-30);
     private DateTime commitEndDate = DateTime.Today;
     private bool isSyncingCommits = false;
-    private bool isRefreshingCommits = false; // New field
+    private bool isRefreshingCommits = false;
 
     // PR sync - only need repo slug, workspace comes from WorkspaceService
     private string prRepo = string.Empty;
@@ -380,10 +653,27 @@
     private bool isMarkingReverts = false;
     private string revertResultMessage = string.Empty;
 
+    // Database Settings functionality variables
+    private List<Setting> AllSettings = new();
+    private List<Setting> FilteredSettings = new();
+    private List<string> Categories = new();
+    private string SelectedCategory = "All";
+    private string? ErrorMessage;
+    private string? SuccessMessage;
+
+    private int? EditingSettingId;
+    private string EditValue = "";
+
+    private bool ShowAddSettingDialog = false;
+    private Setting NewSetting = new() { IsActive = true, ValueType = "String" };
+
     protected override async Task OnInitializedAsync()
     {
         await LoadWorkspaces();
+        await LoadSettings();
     }
+
+    #region Original Settings Methods
 
     private async Task LoadWorkspaces()
     {
@@ -415,8 +705,6 @@
 
         try
         {
-            // Assuming a refresh endpoint exists or we can just reload from existing repos
-            // For now, we'll just reload the workspaces from the existing data
             await LoadWorkspaces();
             ShowMessage("Workspaces refreshed successfully.", "success");
         }
@@ -444,12 +732,12 @@
         try
         {
             var response = await Http.PostAsync("/api/sync/repositories/" + WorkspaceService.SelectedWorkspace, null);
-            
+
             if (response.IsSuccessStatusCode)
             {
                 var responseContent = await response.Content.ReadAsStringAsync();
                 ShowMessage(responseContent, "success");
-                await LoadWorkspaces(); // Refresh workspaces after sync
+                await LoadWorkspaces();
             }
             else
             {
@@ -512,7 +800,7 @@
             var url = "/api/sync/commits/" + WorkspaceService.SelectedWorkspace + "/" + commitRepo;
             var dateRange = new { startDate, endDate };
             var response = await Http.PostAsJsonAsync(url, dateRange);
-            
+
             if (response.IsSuccessStatusCode)
             {
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -579,7 +867,7 @@
             var url = "/api/sync/pullrequests/" + WorkspaceService.SelectedWorkspace + "/" + prRepo;
             var dateRange = new { startDate, endDate };
             var response = await Http.PostAsJsonAsync(url, dateRange);
-            
+
             if (response.IsSuccessStatusCode)
             {
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -638,26 +926,17 @@
             return;
         }
 
-        // The following if-block caused an issue if fixPrRepoSlug was null or empty, leading to a Bad Request.
-        // It should allow empty for all repositories, as per the UI text.
-        // if (string.IsNullOrWhiteSpace(fixPrRepoSlug))
-        // {
-        //     ShowMessage("Please enter repository slug for specific fix or leave empty for all", "error");
-        //     return;
-        // }
-
-        isSyncingPRs = true; // Reusing isSyncingPRs for this operation
+        isSyncingPRs = true;
         message = string.Empty;
 
         try
         {
-            // Construct URL based on whether repoSlug is provided
             var url = string.IsNullOrWhiteSpace(fixPrRepoSlug)
                 ? $"/api/sync/fix-pr-merge-flags"
                 : $"/api/sync/fix-pr-merge-flags?repoSlug={fixPrRepoSlug}";
 
             var response = await Http.PostAsync(url, null);
-            
+
             if (response.IsSuccessStatusCode)
             {
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -722,4 +1001,197 @@
         messageType = type;
         StateHasChanged();
     }
-} 
+
+    #endregion
+
+    #region Database Settings Methods
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            AllSettings = await SettingsRepository.GetAllSettingsAsync();
+            Categories = AllSettings.Select(s => s.Category).Distinct().OrderBy(c => c).ToList();
+            FilterSettings();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load settings");
+            ErrorMessage = $"Failed to load settings: {ex.Message}";
+        }
+    }
+
+    private void SelectCategory(string category)
+    {
+        SelectedCategory = category;
+        FilterSettings();
+    }
+
+    private void FilterSettings()
+    {
+        if (SelectedCategory == "All")
+        {
+            FilteredSettings = AllSettings.OrderBy(s => s.Category).ThenBy(s => s.DisplayOrder).ThenBy(s => s.Key).ToList();
+        }
+        else
+        {
+            FilteredSettings = AllSettings
+                .Where(s => s.Category == SelectedCategory)
+                .OrderBy(s => s.DisplayOrder)
+                .ThenBy(s => s.Key)
+                .ToList();
+        }
+    }
+
+    private string GetDisplayValue(Setting setting)
+    {
+        if (setting.Value.Length > 100 && (setting.ValueType == "Array" || setting.ValueType == "JSON"))
+        {
+            try
+            {
+                var json = JsonDocument.Parse(setting.Value);
+                return setting.Value.Substring(0, 100) + "...";
+            }
+            catch
+            {
+                return setting.Value.Substring(0, Math.Min(100, setting.Value.Length)) + "...";
+            }
+        }
+        return setting.Value;
+    }
+
+    private void StartEdit(Setting setting)
+    {
+        EditingSettingId = setting.Id;
+        EditValue = setting.Value;
+    }
+
+    private void CancelEdit()
+    {
+        EditingSettingId = null;
+        EditValue = "";
+    }
+
+    private async Task SaveSetting(Setting setting)
+    {
+        try
+        {
+            if (setting.ValueType == "JSON" || setting.ValueType == "Array")
+            {
+                try
+                {
+                    JsonDocument.Parse(EditValue);
+                }
+                catch (JsonException)
+                {
+                    ErrorMessage = $"Invalid {setting.ValueType} format. Please enter valid JSON.";
+                    return;
+                }
+            }
+
+            setting.Value = EditValue;
+            setting.UpdatedAt = DateTime.UtcNow;
+
+            await SettingsRepository.UpdateSettingAsync(setting);
+
+            SuccessMessage = $"Setting '{setting.Key}' updated successfully.";
+            EditingSettingId = null;
+            EditValue = "";
+
+            await LoadSettings();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to update setting");
+            ErrorMessage = $"Failed to update setting: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteSetting(Setting setting)
+    {
+        if (setting.IsSystem)
+        {
+            ErrorMessage = "System settings cannot be deleted.";
+            return;
+        }
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm",
+            $"Are you sure you want to delete the setting '{setting.Key}' from category '{setting.Category}'?");
+
+        if (!confirmed)
+            return;
+
+        try
+        {
+            await SettingsRepository.DeleteSettingAsync(setting.Id);
+            SuccessMessage = $"Setting '{setting.Key}' deleted successfully.";
+            await LoadSettings();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete setting");
+            ErrorMessage = $"Failed to delete setting: {ex.Message}";
+        }
+    }
+
+    private void ShowAddDialog()
+    {
+        ShowAddSettingDialog = true;
+        NewSetting = new Setting { IsActive = true, ValueType = "String" };
+    }
+
+    private void CancelAdd()
+    {
+        ShowAddSettingDialog = false;
+        NewSetting = new Setting { IsActive = true, ValueType = "String" };
+    }
+
+    private async Task AddSetting()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(NewSetting.Category) ||
+                string.IsNullOrWhiteSpace(NewSetting.Key) ||
+                string.IsNullOrWhiteSpace(NewSetting.Value))
+            {
+                ErrorMessage = "Category, Key, and Value are required fields.";
+                return;
+            }
+
+            if (NewSetting.ValueType == "JSON" || NewSetting.ValueType == "Array")
+            {
+                try
+                {
+                    JsonDocument.Parse(NewSetting.Value);
+                }
+                catch (JsonException)
+                {
+                    ErrorMessage = $"Invalid {NewSetting.ValueType} format. Please enter valid JSON.";
+                    return;
+                }
+            }
+
+            NewSetting.CreatedAt = DateTime.UtcNow;
+            await SettingsRepository.AddSettingAsync(NewSetting);
+
+            SuccessMessage = $"Setting '{NewSetting.Key}' added successfully.";
+            ShowAddSettingDialog = false;
+
+            await LoadSettings();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to add setting");
+            ErrorMessage = $"Failed to add setting: {ex.Message}";
+        }
+    }
+
+    private string GetPlaceholderText()
+    {
+        return NewSetting.ValueType == "Array"
+            ? @"[""value1"", ""value2""]"
+            : @"{""key"": ""value""}";
+    }
+
+    #endregion
+}

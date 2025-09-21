@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Development startup script for BB solution
-echo "🚀 Starting BB Development Environment"
+# Development startup script for DevView solution
+echo "🚀 Starting DevView Development Environment"
 echo "======================================"
 
 # Function to check if a port is in use
@@ -17,14 +17,14 @@ check_port() {
 
 # Check required ports
 echo "📋 Checking ports..."
-check_port 5005 || exit 1
+check_port 5000 || exit 1
 check_port 5084 || exit 1
 
 # Start API in background
 echo ""
-echo "🔧 Starting BB.Api on http://localhost:5005..."
-cd BB.Api
-dotnet run --no-launch-profile --urls="http://localhost:5005" > ../api.log 2>&1 &
+echo "🔧 Starting API on http://localhost:5000..."
+cd API
+dotnet run --no-launch-profile --urls="http://localhost:5000" > ../api.log 2>&1 &
 API_PID=$!
 cd ..
 
@@ -34,7 +34,7 @@ sleep 5
 
 # Test API endpoint
 echo "🧪 Testing API endpoint..."
-if curl -s http://localhost:5005/api/analytics/repositories > /dev/null; then
+if curl -s http://localhost:5000/api/analytics/repositories > /dev/null; then
     echo "✅ API is responding"
 else
     echo "❌ API is not responding"
@@ -46,8 +46,8 @@ fi
 
 # Start Web app
 echo ""
-echo "🌐 Starting BB.Web on http://localhost:5084..."
-cd BB.Web
+echo "🌐 Starting Web on http://localhost:5084..."
+cd Web
 dotnet run --no-launch-profile --urls="http://localhost:5084" > ../web.log 2>&1 &
 WEB_PID=$!
 cd ..
@@ -56,7 +56,7 @@ echo ""
 echo "🎉 Both applications are starting!"
 echo "📊 Dashboard: http://localhost:5084/dashboard"
 echo "🧪 API Test: http://localhost:5084/api-test"
-echo "📖 API Docs: http://localhost:5005/swagger"
+echo "📖 API Docs: http://localhost:5000/swagger"
 echo ""
 echo "📝 Logs:"
 echo "   API logs: tail -f api.log"
