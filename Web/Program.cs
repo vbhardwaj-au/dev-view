@@ -34,8 +34,17 @@ builder.Services.AddScoped<BitbucketUrlService>();
 // Add Data layer services
 builder.Services.AddScoped<Data.Repositories.SettingsRepository>();
 
-// Check if Azure AD is enabled
-var azureAdEnabled = builder.Configuration.GetValue<bool>("AzureAd:Enabled", false);
+// Build the configuration to check if Azure AD is enabled
+var configuration = builder.Configuration;
+var azureAdEnabled = configuration.GetValue<bool>("AzureAd:Enabled", false);
+
+// Log the Azure AD configuration for debugging
+Console.WriteLine($"[Program] Azure AD Enabled: {azureAdEnabled}");
+if (azureAdEnabled)
+{
+    Console.WriteLine($"[Program] Azure AD TenantId: {configuration["AzureAd:TenantId"]}");
+    Console.WriteLine($"[Program] Azure AD ClientId: {configuration["AzureAd:ClientId"]}");
+}
 
 // Register authentication services
 builder.Services.AddScoped<AuthService>();
@@ -126,7 +135,9 @@ if (azureAdEnabled)
                     }
                 }
 
-                // The cookie auth is now established, we'll process the user on the client side
+                // Redirect to process-auth page after successful authentication
+                context.Properties.RedirectUri = "/process-auth";
+
                 return Task.CompletedTask;
             },
             OnAuthenticationFailed = context =>

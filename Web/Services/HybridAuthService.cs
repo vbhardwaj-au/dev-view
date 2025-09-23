@@ -159,10 +159,14 @@ namespace Web.Services
             try
             {
                 // Log all claims for debugging
-                _logger.LogInformation("HandleAzureCallbackAsync: Processing claims for user");
+                _logger.LogInformation("[HybridAuth] ========== AZURE CALLBACK PROCESSING START ==========");
+                _logger.LogInformation("[HybridAuth] Step 1: Processing claims for user");
+                _logger.LogInformation("[HybridAuth]   - User Identity: {Identity}", user?.Identity?.Name);
+                _logger.LogInformation("[HybridAuth]   - Is Authenticated: {IsAuth}", user?.Identity?.IsAuthenticated);
+                _logger.LogInformation("[HybridAuth]   - Total Claims: {Count}", user?.Claims?.Count() ?? 0);
                 foreach (var claim in user.Claims)
                 {
-                    _logger.LogInformation("Claim: Type={Type}, Value={Value}", claim.Type, claim.Value);
+                    _logger.LogInformation("[HybridAuth]   - Claim: Type={Type}, Value={Value}", claim.Type, claim.Value);
                 }
 
                 var client = _httpClientFactory.CreateClient("api");
@@ -207,16 +211,16 @@ namespace Web.Services
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
                 
                 var response = await client.PostAsync("api/auth/azure-callback", content);
-                
+
                 if (response.IsSuccessStatusCode)
                 {
                     var responseContent = await response.Content.ReadAsStringAsync();
                     var loginResponse = JsonSerializer.Deserialize<LoginResponse>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    
+
                     if (loginResponse != null && !string.IsNullOrEmpty(loginResponse.Token))
                     {
                         await SetAuthenticationAsync(loginResponse.Token, loginResponse.DisplayName, loginResponse.Roles);
-                        
+
                         return new AuthResult
                         {
                             Success = true,
@@ -226,7 +230,45 @@ namespace Web.Services
                         };
                     }
                 }
-                
+                else
+                {
+                    // Try to parse the error response to get the actual error message
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("Azure callback failed. Status: {StatusCode}, Error: {Error}", response.StatusCode, errorContent);
+
+                    try
+                    {
+                        // First try to parse as the error response format from API (with "message" property)
+                        using var doc = JsonDocument.Parse(errorContent);
+                        if (doc.RootElement.TryGetProperty("message", out var messageElement))
+                        {
+                            var errorMessage = messageElement.GetString();
+                            if (!string.IsNullOrEmpty(errorMessage))
+                            {
+                                _logger.LogInformation("Extracted error message from API response: {Message}", errorMessage);
+                                return new AuthResult { Success = false, ErrorMessage = errorMessage };
+                            }
+                        }
+
+                        // Try to parse as AuthResult (backward compatibility)
+                        var errorResponse = JsonSerializer.Deserialize<AuthResult>(errorContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        if (!string.IsNullOrEmpty(errorResponse?.ErrorMessage))
+                        {
+                            return new AuthResult { Success = false, ErrorMessage = errorResponse.ErrorMessage };
+                        }
+                    }
+                    catch (Exception parseEx)
+                    {
+                        _logger.LogWarning(parseEx, "Failed to parse error response");
+                    }
+
+                    // If we can't parse the error, return the raw message or a generic one
+                    if (!string.IsNullOrEmpty(errorContent))
+                    {
+                        return new AuthResult { Success = false, ErrorMessage = errorContent };
+                    }
+                }
+
                 return new AuthResult { Success = false, ErrorMessage = "Azure AD authentication failed" };
             }
             catch (Exception ex)

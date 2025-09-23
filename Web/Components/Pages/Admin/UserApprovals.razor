@@ -1,0 +1,602 @@
+@page "/admin/user-approvals"
+@using Web.Services
+@using Data.Models
+@using System.Text.Json
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Admin")]
+@inject AuthService AuthService
+@inject HttpClient HttpClient
+@inject IJSRuntime JSRuntime
+
+<PageTitle>User Approvals - Admin</PageTitle>
+
+<h3>
+    <i class="fas fa-user-check me-2"></i>
+    User Approval Management
+</h3>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="text-center">
+                    <h2 class="text-warning">@pendingCount</h2>
+                    <p class="text-muted">Pending Approvals</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <h2 class="text-success">@approvedCount</h2>
+                    <p class="text-muted">Approved Today</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <h2 class="text-danger">@rejectedCount</h2>
+                    <p class="text-muted">Rejected Today</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <h2 class="text-info">@avgApprovalTime hrs</h2>
+                    <p class="text-muted">Avg. Approval Time</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "pending" ? "active" : "")"
+           @onclick="SetPendingTab"
+           role="tab"
+           style="cursor: pointer;">
+            <i class="fas fa-clock me-1"></i>
+            Pending
+            @if (pendingUsers.Any())
+            {
+                <span class="badge bg-warning ms-1">@pendingUsers.Count</span>
+            }
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "approved" ? "active" : "")"
+           @onclick="SetApprovedTab"
+           role="tab"
+           style="cursor: pointer;">
+            <i class="fas fa-check me-1"></i>
+            Approved
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(activeTab == "rejected" ? "active" : "")"
+           @onclick="SetRejectedTab"
+           role="tab"
+           style="cursor: pointer;">
+            <i class="fas fa-times me-1"></i>
+            Rejected
+        </a>
+    </li>
+</ul>
+
+<!-- Tab Content -->
+@if (isLoading)
+{
+    <div class="text-center py-4">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    @if (activeTab == "pending")
+    {
+        @if (!pendingUsers.Any())
+        {
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                No pending user approvals at this time.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Email</th>
+                            <th>Department</th>
+                            <th>Team</th>
+                            <th>Requested</th>
+                            <th>Time Pending</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in pendingUsers)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@user.DisplayName</strong>
+                                    <br>
+                                    <small class="text-muted">@user.Username</small>
+                                </td>
+                                <td>@user.Email</td>
+                                <td>@(user.Department ?? "N/A")</td>
+                                <td>@(user.Team ?? "N/A")</td>
+                                <td>
+                                    @if (user.RequestedAt.HasValue)
+                                    {
+                                        <span title="@user.RequestedAt.Value.ToString("yyyy-MM-dd HH:mm:ss")">
+                                            @user.RequestedAt.Value.ToString("MMM dd, HH:mm")
+                                        </span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (user.RequestedAt.HasValue)
+                                    {
+                                        var timeSpan = DateTime.UtcNow - user.RequestedAt.Value;
+                                        if (timeSpan.TotalDays >= 1)
+                                        {
+                                            <span class="badge bg-danger">@((int)timeSpan.TotalDays) days</span>
+                                        }
+                                        else if (timeSpan.TotalHours >= 1)
+                                        {
+                                            <span class="badge bg-warning">@((int)timeSpan.TotalHours) hrs</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-info">@((int)timeSpan.TotalMinutes) min</span>
+                                        }
+                                    }
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary"
+                                            @onclick="() => ShowUserDetails(user)">
+                                        <i class="fas fa-eye"></i> Review
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    else if (activeTab == "approved")
+    {
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Approved users list will be displayed here.
+        </div>
+    }
+    else if (activeTab == "rejected")
+    {
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Rejected users list will be displayed here.
+        </div>
+    }
+}
+
+<!-- User Details Modal -->
+@if (selectedUser != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-user-circle me-2"></i>
+                        Review User Access Request
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-primary mb-3">User Information</h6>
+                            <dl class="row">
+                                <dt class="col-sm-4">Name:</dt>
+                                <dd class="col-sm-8">@selectedUser.DisplayName</dd>
+
+                                <dt class="col-sm-4">Username:</dt>
+                                <dd class="col-sm-8">@selectedUser.Username</dd>
+
+                                <dt class="col-sm-4">Email:</dt>
+                                <dd class="col-sm-8">@(selectedUser.Email ?? "N/A")</dd>
+
+                                <dt class="col-sm-4">Department:</dt>
+                                <dd class="col-sm-8">@(selectedUser.Department ?? "N/A")</dd>
+
+                                <dt class="col-sm-4">Job Title:</dt>
+                                <dd class="col-sm-8">@(selectedUser.JobTitle ?? "N/A")</dd>
+
+                                <dt class="col-sm-4">Team:</dt>
+                                <dd class="col-sm-8">@(selectedUser.Team ?? "N/A")</dd>
+
+                                <dt class="col-sm-4">Auth Provider:</dt>
+                                <dd class="col-sm-8">
+                                    <span class="badge bg-info">@selectedUser.AuthProvider</span>
+                                </dd>
+                            </dl>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-primary mb-3">Request Details</h6>
+                            <dl class="row">
+                                <dt class="col-sm-4">Requested:</dt>
+                                <dd class="col-sm-8">
+                                    @if (selectedUser.RequestedAt.HasValue)
+                                    {
+                                        @selectedUser.RequestedAt.Value.ToString("yyyy-MM-dd HH:mm:ss")
+                                    }
+                                </dd>
+
+                                <dt class="col-sm-4">Reason:</dt>
+                                <dd class="col-sm-8">
+                                    @if (!string.IsNullOrEmpty(selectedUser.RequestReason))
+                                    {
+                                        <p class="mb-0">@selectedUser.RequestReason</p>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">No reason provided</span>
+                                    }
+                                </dd>
+                            </dl>
+
+                            @if (similarBitbucketUsers != null && similarBitbucketUsers.Any())
+                            {
+                                <h6 class="text-primary mb-3">Suggested Git Users</h6>
+                                <select class="form-select mb-2" @bind="selectedBitbucketUserId">
+                                    <option value="">-- No linking --</option>
+                                    @foreach (var gitUser in similarBitbucketUsers)
+                                    {
+                                        <option value="@gitUser.Id">@gitUser.DisplayName</option>
+                                    }
+                                </select>
+                            }
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label class="form-label">Assign Role:</label>
+                            <select class="form-select" @bind="selectedRole">
+                                <option value="User">User (Read-only)</option>
+                                <option value="Manager">Manager (Team access)</option>
+                                <option value="Admin">Admin (Full access)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Assign to Team:</label>
+                            <select class="form-select" @bind="selectedTeamId">
+                                <option value="">-- No Team --</option>
+                                @foreach (var team in availableTeams)
+                                {
+                                    <option value="@team.Id">@team.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Admin Notes (Optional):</label>
+                            <input type="text" class="form-control" @bind="adminNotes"
+                                   placeholder="Internal notes about this approval">
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(modalError))
+                    {
+                        <div class="alert alert-danger mt-3">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            @modalError
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" @onclick="ShowRejectDialog">
+                        <i class="fas fa-times me-2"></i>
+                        Reject
+                    </button>
+                    <button type="button" class="btn btn-success" @onclick="ApproveUser" disabled="@isProcessing">
+                        @if (isProcessing)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        else
+                        {
+                            <i class="fas fa-check me-2"></i>
+                        }
+                        Approve & Grant Access
+                    </button>
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Rejection Reason Modal -->
+@if (showRejectDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">
+                        <i class="fas fa-ban me-2"></i>
+                        Reject User Access
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseRejectDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Please provide a reason for rejecting this user's access request:</p>
+                    <textarea class="form-control" rows="3" @bind="rejectionReason"
+                              placeholder="Enter rejection reason (required)"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseRejectDialog">
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-danger" @onclick="RejectUser"
+                            disabled="@(isProcessing || string.IsNullOrWhiteSpace(rejectionReason))">
+                        @if (isProcessing)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        else
+                        {
+                            <i class="fas fa-times me-2"></i>
+                        }
+                        Reject User
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isProcessing = false;
+    private string activeTab = "pending";
+    private List<AuthUser> pendingUsers = new();
+    private AuthUser? selectedUser;
+    private List<User>? similarBitbucketUsers;
+    private int? selectedBitbucketUserId;
+    private string selectedRole = "User";
+    private int? selectedTeamId;
+    private List<Team> availableTeams = new();
+    private string? adminNotes;
+    private string? modalError;
+    private bool showRejectDialog = false;
+    private string? rejectionReason;
+
+    // Statistics
+    private int pendingCount = 0;
+    private int approvedCount = 0;
+    private int rejectedCount = 0;
+    private double avgApprovalTime = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        await LoadStatistics();
+        await LoadTeams();
+    }
+
+    private async Task LoadTeams()
+    {
+        try
+        {
+            // Load teams from the API
+            var response = await HttpClient.GetAsync("api/teams");
+            if (response.IsSuccessStatusCode)
+            {
+                availableTeams = await response.Content.ReadFromJsonAsync<List<Team>>() ?? new();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading teams: {ex.Message}");
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+
+            var response = await AuthService.GetPendingApprovalsAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                pendingUsers = await response.Content.ReadFromJsonAsync<List<AuthUser>>() ?? new();
+                pendingCount = pendingUsers.Count;
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadStatistics()
+    {
+        try
+        {
+            var response = await AuthService.GetApprovalStatisticsAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var stats = await response.Content.ReadFromJsonAsync<ApprovalStatistics>();
+                if (stats != null)
+                {
+                    pendingCount = stats.PendingCount;
+                    approvedCount = stats.ApprovedCount;
+                    rejectedCount = stats.RejectedCount;
+                    avgApprovalTime = stats.AverageApprovalTimeHours;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading statistics: {ex.Message}");
+        }
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private void SetPendingTab() => SetActiveTab("pending");
+    private void SetApprovedTab() => SetActiveTab("approved");
+    private void SetRejectedTab() => SetActiveTab("rejected");
+
+    private async Task ShowUserDetails(AuthUser user)
+    {
+        selectedUser = user;
+        modalError = null;
+        selectedTeamId = null; // Reset team selection
+        selectedRole = "User"; // Reset role selection
+        adminNotes = null; // Reset admin notes
+        selectedBitbucketUserId = null; // Reset Bitbucket user selection
+
+        // Load similar Bitbucket users
+        try
+        {
+            var response = await AuthService.GetUserDetailsForApprovalAsync(user.Id);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<UserApprovalDetails>();
+                similarBitbucketUsers = result?.SimilarBitbucketUsers;
+            }
+        }
+        catch (Exception ex)
+        {
+            modalError = $"Error loading user details: {ex.Message}";
+        }
+    }
+
+    private void CloseModal()
+    {
+        selectedUser = null;
+        similarBitbucketUsers = null;
+        selectedBitbucketUserId = null;
+        selectedTeamId = null;
+        selectedRole = "User";
+        adminNotes = null;
+        modalError = null;
+    }
+
+    private void ShowRejectDialog()
+    {
+        showRejectDialog = true;
+        rejectionReason = null;
+    }
+
+    private void CloseRejectDialog()
+    {
+        showRejectDialog = false;
+        rejectionReason = null;
+    }
+
+    private async Task ApproveUser()
+    {
+        if (selectedUser == null) return;
+
+        try
+        {
+            isProcessing = true;
+            modalError = null;
+
+            var response = await AuthService.ApproveUserAsync(
+                selectedUser.Id,
+                selectedRole,
+                selectedBitbucketUserId,
+                selectedTeamId,
+                adminNotes);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "User approved successfully!");
+                CloseModal();
+                await LoadData();
+                await LoadStatistics();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                modalError = $"Failed to approve user: {error}";
+            }
+        }
+        catch (Exception ex)
+        {
+            modalError = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task RejectUser()
+    {
+        if (selectedUser == null || string.IsNullOrWhiteSpace(rejectionReason)) return;
+
+        try
+        {
+            isProcessing = true;
+
+            var response = await AuthService.RejectUserAsync(selectedUser.Id, rejectionReason);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "User rejected.");
+                CloseRejectDialog();
+                CloseModal();
+                await LoadData();
+                await LoadStatistics();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Failed to reject user: {error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private class ApprovalStatistics
+    {
+        public int PendingCount { get; set; }
+        public int ApprovedCount { get; set; }
+        public int RejectedCount { get; set; }
+        public double AverageApprovalTimeHours { get; set; }
+    }
+
+    private class UserApprovalDetails
+    {
+        public AuthUser? User { get; set; }
+        public List<User>? SimilarBitbucketUsers { get; set; }
+    }
+}

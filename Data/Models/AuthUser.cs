@@ -25,14 +25,39 @@ namespace Data.Models
         public bool IsActive { get; set; } = true;
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
         public DateTime? ModifiedOn { get; set; }
-        
+
+        // Approval workflow fields
+        public string ApprovalStatus { get; set; } = "Approved"; // "Pending", "Approved", "Rejected"
+        public DateTime? RequestedAt { get; set; }
+        public DateTime? ApprovedAt { get; set; }
+        public int? ApprovedBy { get; set; }
+        public DateTime? RejectedAt { get; set; }
+        public int? RejectedBy { get; set; }
+        public string? RejectionReason { get; set; }
+        public int? LinkedBitbucketUserId { get; set; }
+        public string? Notes { get; set; }
+        public string? RequestReason { get; set; }
+        public string? Team { get; set; }
+
         // Navigation properties
         public List<AuthRole> Roles { get; set; } = new();
-        
+        public AuthUser? ApprovedByUser { get; set; }
+        public AuthUser? RejectedByUser { get; set; }
+        public User? LinkedBitbucketUser { get; set; }
+
         // Helper properties
         public bool IsAzureAdUser => AuthProvider == "AzureAd";
         public bool IsDatabaseUser => AuthProvider == "Database";
-        
+        public bool IsPendingApproval => ApprovalStatus == "Pending";
+        public bool IsApproved => ApprovalStatus == "Approved";
+        public bool IsRejected => ApprovalStatus == "Rejected";
+
+        /// <summary>
+        /// Temporary flag to indicate if this is a newly created user (not persisted to DB)
+        /// Used for providing better user messages during authentication
+        /// </summary>
+        public bool? IsNewUser { get; set; }
+
         /// <summary>
         /// Gets the display name or falls back to username if display name is empty
         /// </summary>
@@ -43,5 +68,12 @@ namespace Data.Models
     {
         Database,
         AzureAd
+    }
+
+    public enum ApprovalStatus
+    {
+        Pending,
+        Approved,
+        Rejected
     }
 }

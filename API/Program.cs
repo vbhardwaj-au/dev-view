@@ -20,12 +20,16 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Caching.Memory;
 using System.Text;
 
 // Set Dapper default command timeout
 Dapper.SqlMapper.Settings.CommandTimeout = 300; // 5 minutes
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add memory cache for notifications
+builder.Services.AddMemoryCache();
 
 // Register authentication services
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
@@ -35,6 +39,39 @@ builder.Services.AddScoped<IMicrosoftGraphService, MicrosoftGraphService>();
 // Register repositories
 builder.Services.AddScoped<GitConnectionRepository>();
 builder.Services.AddScoped<SettingsRepository>();
+builder.Services.AddScoped(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var logger = provider.GetRequiredService<ILogger<AuthRepository>>();
+    var connectionString = config.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("DefaultConnection not configured");
+    return new AuthRepository(connectionString, logger);
+});
+builder.Services.AddScoped(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var logger = provider.GetRequiredService<ILogger<NotificationRepository>>();
+    var connectionString = config.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("DefaultConnection not configured");
+    return new NotificationRepository(connectionString, logger);
+});
+builder.Services.AddScoped(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var logger = provider.GetRequiredService<ILogger<UserRepository>>();
+    var connectionString = config.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("DefaultConnection not configured");
+    return new UserRepository(connectionString, logger);
+});
+
+// Register services
+builder.Services.AddScoped<UserApprovalService>();
+builder.Services.AddScoped(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var notificationRepo = provider.GetRequiredService<NotificationRepository>();
+    var cache = provider.GetRequiredService<IMemoryCache>();
+    var logger = provider.GetRequiredService<ILogger<NotificationService>>();
+    var connectionString = config.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("DefaultConnection not configured");
+    return new NotificationService(notificationRepo, cache, logger, connectionString);
+});
 
 // Register database configuration service
 builder.Services.AddScoped<IDatabaseConfigurationService, DatabaseConfigurationService>();
@@ -219,5 +256,7 @@ app.MapControllers();
 // Map custom endpoints
 app.MapGitConnectionEndpoints();
 app.MapSettingsEndpoints();
+app.MapApprovalEndpoints();
+app.MapNotificationEndpoints();
 
 app.Run(); 

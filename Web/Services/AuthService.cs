@@ -180,6 +180,96 @@ namespace Web.Services
             // This will sign out from both cookie auth and Azure AD
             _nav.NavigateTo("/Account/SignOut", forceLoad: true);
         }
+
+        // User Approval System Methods
+
+        public async Task<HttpResponseMessage> RequestAccessAsync(string? team, string? requestReason)
+        {
+            var client = _httpClientFactory.CreateClient("api");
+            await AddAuthHeader(client);
+
+            var request = new { Team = team, RequestReason = requestReason };
+            var json = JsonSerializer.Serialize(request);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            return await client.PostAsync("api/approvals/request-access", content);
+        }
+
+        public async Task<HttpResponseMessage> GetMyApprovalStatusAsync()
+        {
+            var client = _httpClientFactory.CreateClient("api");
+            await AddAuthHeader(client);
+            return await client.GetAsync("api/approvals/my-status");
+        }
+
+        public async Task<HttpResponseMessage> GetPendingApprovalsAsync()
+        {
+            var client = _httpClientFactory.CreateClient("api");
+            await AddAuthHeader(client);
+            return await client.GetAsync("api/approvals/pending");
+        }
+
+        public async Task<HttpResponseMessage> GetApprovalStatisticsAsync()
+        {
+            var client = _httpClientFactory.CreateClient("api");
+            await AddAuthHeader(client);
+            return await client.GetAsync("api/approvals/statistics");
+        }
+
+        public async Task<HttpResponseMessage> GetUserDetailsForApprovalAsync(int userId)
+        {
+            var client = _httpClientFactory.CreateClient("api");
+            await AddAuthHeader(client);
+            return await client.GetAsync($"api/approvals/user/{userId}");
+        }
+
+        public async Task<HttpResponseMessage> ApproveUserAsync(int userId, string roleName, int? linkedBitbucketUserId, int? teamId, string? notes)
+        {
+            var client = _httpClientFactory.CreateClient("api");
+            await AddAuthHeader(client);
+
+            var request = new
+            {
+                RoleName = roleName,
+                LinkedBitbucketUserId = linkedBitbucketUserId,
+                TeamId = teamId,
+                Notes = notes
+            };
+            var json = JsonSerializer.Serialize(request);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            return await client.PostAsync($"api/approvals/approve/{userId}", content);
+        }
+
+        public async Task<HttpResponseMessage> RejectUserAsync(int userId, string rejectionReason)
+        {
+            var client = _httpClientFactory.CreateClient("api");
+            await AddAuthHeader(client);
+
+            var request = new { RejectionReason = rejectionReason };
+            var json = JsonSerializer.Serialize(request);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            return await client.PostAsync($"api/approvals/reject/{userId}", content);
+        }
+
+        private async Task AddAuthHeader(HttpClient client)
+        {
+            // Try to get token from localStorage if not already set
+            if (string.IsNullOrEmpty(Token))
+            {
+                try
+                {
+                    Token = await _jsRuntime.InvokeAsync<string>("authHelper.getToken");
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrEmpty(Token))
+            {
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+            }
+        }
     }
 }
 

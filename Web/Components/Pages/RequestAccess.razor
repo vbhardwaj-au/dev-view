@@ -1,0 +1,240 @@
+@page "/request-access"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Web.Services
+@using System.Security.Claims
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Request Access - DevView</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-user-lock me-2"></i>
+                        Access Request Required
+                    </h4>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else if (requestSubmitted)
+                    {
+                        <div class="alert alert-success">
+                            <h5 class="alert-heading">
+                                <i class="fas fa-check-circle me-2"></i>
+                                Request Submitted Successfully!
+                            </h5>
+                            <p>Your access request has been submitted and will be reviewed by an administrator.</p>
+                            <hr>
+                            <p class="mb-0">Average approval time: 24-48 hours</p>
+                        </div>
+                        <button class="btn btn-primary" @onclick="NavigateToHome">
+                            <i class="fas fa-home me-2"></i>
+                            Return to Home
+                        </button>
+                    }
+                    else
+                    {
+                        <div class="mb-4">
+                            <p class="text-muted">
+                                Your account needs administrator approval to access DevView.
+                                Please provide additional information to help expedite your request.
+                            </p>
+                        </div>
+
+                        <!-- User Details Card -->
+                        <div class="card mb-3 bg-light">
+                            <div class="card-body">
+                                <h6 class="card-title">Your Information</h6>
+                                <dl class="row mb-0">
+                                    <dt class="col-sm-4">Name:</dt>
+                                    <dd class="col-sm-8">@(userInfo?.DisplayName ?? "N/A")</dd>
+
+                                    <dt class="col-sm-4">Email:</dt>
+                                    <dd class="col-sm-8">@(userInfo?.Email ?? "N/A")</dd>
+
+                                    <dt class="col-sm-4">Department:</dt>
+                                    <dd class="col-sm-8">@(userInfo?.Department ?? "N/A")</dd>
+
+                                    <dt class="col-sm-4">Job Title:</dt>
+                                    <dd class="col-sm-8">@(userInfo?.JobTitle ?? "N/A")</dd>
+                                </dl>
+                            </div>
+                        </div>
+
+                        <!-- Additional Information Form -->
+                        <EditForm Model="@requestModel" OnValidSubmit="@SubmitRequest">
+                            <DataAnnotationsValidator />
+
+                            <div class="mb-3">
+                                <label class="form-label">Team/Project <small class="text-muted">(Optional)</small></label>
+                                <InputText @bind-Value="requestModel.Team" class="form-control"
+                                    placeholder="e.g., Platform Team, Mobile Development" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Reason for Access <small class="text-muted">(Optional but recommended)</small></label>
+                                <InputTextArea @bind-Value="requestModel.RequestReason" class="form-control" rows="4"
+                                    placeholder="Please describe why you need access to DevView and how you will use it..." />
+                                <small class="form-text text-muted">
+                                    Providing a clear reason will help expedite your approval.
+                                </small>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(errorMessage))
+                            {
+                                <div class="alert alert-danger mb-3">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    @errorMessage
+                                </div>
+                            }
+
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                                    @if (isSubmitting)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                        <span>Submitting...</span>
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-paper-plane me-2"></i>
+                                        <span>Submit Access Request</span>
+                                    }
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="Logout">
+                                    <i class="fas fa-sign-out-alt me-2"></i>
+                                    Logout
+                                </button>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+
+            <div class="text-center mt-3">
+                <small class="text-muted">
+                    Need help? Contact your administrator or
+                    <a href="mailto:admin@devview.com">send us an email</a>
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private bool requestSubmitted = false;
+    private string? errorMessage;
+    private UserInfo? userInfo;
+    private RequestAccessModel requestModel = new();
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            isLoading = true;
+
+            // Get user information from authentication state
+            if (AuthenticationStateTask != null)
+            {
+                var authState = await AuthenticationStateTask;
+                var user = authState.User;
+
+                if (user.Identity?.IsAuthenticated == true)
+                {
+                    userInfo = new UserInfo
+                    {
+                        DisplayName = user.FindFirst("name")?.Value ?? user.Identity.Name,
+                        Email = user.FindFirst(ClaimTypes.Email)?.Value,
+                        Department = user.FindFirst("department")?.Value,
+                        JobTitle = user.FindFirst("jobTitle")?.Value
+                    };
+                }
+                else
+                {
+                    // If not authenticated, redirect to login
+                    Navigation.NavigateTo("/login");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading user information: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SubmitRequest()
+    {
+        try
+        {
+            isSubmitting = true;
+            errorMessage = null;
+
+            // Call API to submit access request
+            var response = await AuthService.RequestAccessAsync(requestModel.Team, requestModel.RequestReason);
+
+            if (response.IsSuccessStatusCode)
+            {
+                requestSubmitted = true;
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                errorMessage = $"Failed to submit request: {error}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private void NavigateToHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        await JSRuntime.InvokeVoidAsync("localStorage.removeItem", "jwtToken");
+        Navigation.NavigateTo("/login");
+    }
+
+    private class RequestAccessModel
+    {
+        public string? Team { get; set; }
+        public string? RequestReason { get; set; }
+    }
+
+    private class UserInfo
+    {
+        public string? DisplayName { get; set; }
+        public string? Email { get; set; }
+        public string? Department { get; set; }
+        public string? JobTitle { get; set; }
+    }
+}

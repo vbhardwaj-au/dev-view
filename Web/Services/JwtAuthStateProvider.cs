@@ -43,9 +43,12 @@ namespace Web.Services
                     if (httpContext?.User?.Identity?.IsAuthenticated == true)
                     {
                         _logger.LogInformation("No JWT token found, but cookie authentication detected for user: {Name}", httpContext.User.Identity.Name);
-                        _logger.LogWarning("Cookie authentication alone does not provide roles. User should complete Azure AD callback to get JWT token.");
-                        // Return cookie auth but don't cache it - we want to check for JWT token next time
-                        return new AuthenticationState(httpContext.User);
+                        _logger.LogWarning("Cookie authentication alone is not sufficient. User must have a valid JWT token.");
+                        // Don't return authenticated state for Azure AD cookie-only auth
+                        // This prevents pending users from accessing the app
+                        _cachedAuthState = new AuthenticationState(_anonymous);
+                        _isInitialized = true;
+                        return _cachedAuthState;
                     }
 
                     _cachedAuthState = new AuthenticationState(_anonymous);

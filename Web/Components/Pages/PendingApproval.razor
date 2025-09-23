@@ -1,0 +1,176 @@
+@page "/pending-approval"
+@using Web.Services
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Pending Approval - DevView</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header bg-warning text-dark">
+                    <h4 class="mb-0 text-center">
+                        <i class="fas fa-hourglass-half me-2"></i>
+                        Access Request Pending
+                    </h4>
+                </div>
+                <div class="card-body text-center py-5">
+                    @if (isLoading)
+                    {
+                        <div class="spinner-border text-warning" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-4">
+                            <i class="fas fa-clock fa-4x text-warning mb-3"></i>
+                            <h5 class="mb-3">Your access request is under review</h5>
+                        </div>
+
+                        @if (approvalStatus != null)
+                        {
+                            <div class="alert alert-info">
+                                <dl class="row mb-0 text-start">
+                                    <dt class="col-sm-5">Status:</dt>
+                                    <dd class="col-sm-7">
+                                        <span class="badge bg-warning text-dark">@approvalStatus.ApprovalStatus</span>
+                                    </dd>
+
+                                    <dt class="col-sm-5">Submitted:</dt>
+                                    <dd class="col-sm-7">
+                                        @if (approvalStatus.RequestedAt.HasValue)
+                                        {
+                                            @approvalStatus.RequestedAt.Value.ToString("MMM dd, yyyy HH:mm")
+                                        }
+                                        else
+                                        {
+                                            <span>N/A</span>
+                                        }
+                                    </dd>
+
+                                    <dt class="col-sm-5">Time Pending:</dt>
+                                    <dd class="col-sm-7">
+                                        @if (approvalStatus.RequestedAt.HasValue)
+                                        {
+                                            var timeSpan = DateTime.UtcNow - approvalStatus.RequestedAt.Value;
+                                            if (timeSpan.TotalDays >= 1)
+                                            {
+                                                <span>@((int)timeSpan.TotalDays) days</span>
+                                            }
+                                            else if (timeSpan.TotalHours >= 1)
+                                            {
+                                                <span>@((int)timeSpan.TotalHours) hours</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@((int)timeSpan.TotalMinutes) minutes</span>
+                                            }
+                                        }
+                                    </dd>
+                                </dl>
+                            </div>
+                        }
+
+                        <div class="mb-4">
+                            <p class="text-muted">
+                                An administrator will review your request and grant access if approved.
+                                Average approval time is 24-48 hours.
+                            </p>
+                        </div>
+
+                        <div class="d-grid gap-2 col-6 mx-auto">
+                            <button class="btn btn-primary" @onclick="RefreshStatus">
+                                <i class="fas fa-sync-alt me-2"></i>
+                                Refresh Status
+                            </button>
+                            <button class="btn btn-outline-secondary" @onclick="Logout">
+                                <i class="fas fa-sign-out-alt me-2"></i>
+                                Logout
+                            </button>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <div class="text-muted small">
+                            <p class="mb-2">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Need immediate access?
+                            </p>
+                            <p>
+                                Contact your administrator or
+                                <a href="mailto:admin@devview.com">send us an email</a>
+                            </p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private ApprovalStatusResponse? approvalStatus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadApprovalStatus();
+    }
+
+    private async Task LoadApprovalStatus()
+    {
+        try
+        {
+            isLoading = true;
+
+            var response = await AuthService.GetMyApprovalStatusAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                approvalStatus = await response.Content.ReadFromJsonAsync<ApprovalStatusResponse>();
+
+                // If approved, redirect to home
+                if (approvalStatus?.ApprovalStatus == "Approved")
+                {
+                    Navigation.NavigateTo("/");
+                }
+                // If rejected, show rejection page
+                else if (approvalStatus?.ApprovalStatus == "Rejected")
+                {
+                    Navigation.NavigateTo($"/access-denied?reason={Uri.EscapeDataString(approvalStatus.RejectionReason ?? "Access denied")}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading approval status: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshStatus()
+    {
+        await LoadApprovalStatus();
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        await JSRuntime.InvokeVoidAsync("localStorage.removeItem", "jwtToken");
+        Navigation.NavigateTo("/login");
+    }
+
+    private class ApprovalStatusResponse
+    {
+        public string? ApprovalStatus { get; set; }
+        public DateTime? RequestedAt { get; set; }
+        public DateTime? ApprovedAt { get; set; }
+        public DateTime? RejectedAt { get; set; }
+        public string? RejectionReason { get; set; }
+    }
+}

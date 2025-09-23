@@ -56,7 +56,32 @@ namespace API.Services
                     _logger.LogWarning("User inactive: {Username}", username);
                     return new AuthResult { Success = false, ErrorMessage = "Account is inactive" };
                 }
-                
+
+                // Check approval status
+                if (user.ApprovalStatus == "Pending")
+                {
+                    _logger.LogWarning("User pending approval: {Username}", username);
+                    return new AuthResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Account pending approval",
+                        RequiresApproval = true,
+                        RequestedAt = user.RequestedAt
+                    };
+                }
+
+                if (user.ApprovalStatus == "Rejected")
+                {
+                    _logger.LogWarning("User rejected: {Username}", username);
+                    return new AuthResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Account access denied",
+                        IsRejected = true,
+                        RejectionReason = user.RejectionReason
+                    };
+                }
+
                 if (user.IsAzureAdUser)
                 {
                     _logger.LogWarning("Azure AD user attempting database login: {Username}", username);
@@ -187,8 +212,11 @@ namespace API.Services
                     };
                     
                     user = await CreateUserFromAzureAdAsync(createRequest);
-                    _logger.LogInformation("Created new Azure AD user: {Username} ({ObjectId}) with job title: {JobTitle}", 
+                    _logger.LogInformation("Created new Azure AD user: {Username} ({ObjectId}) with job title: {JobTitle}",
                         user.Username, objectId, user.JobTitle ?? "N/A");
+
+                    // Mark this as a newly created user for better messaging
+                    user.IsNewUser = true;
                 }
                 else
                 {
@@ -222,6 +250,49 @@ namespace API.Services
                         user.Username, objectId, updateRequest.DisplayName, updateRequest.Email);
                 }
                 
+                // Check approval status for Azure AD users
+                if (user.ApprovalStatus == "Pending")
+                {
+                    _logger.LogWarning("Azure AD user pending approval: {Username}", user.Username);
+
+                    // Different messages for new vs existing pending users
+                    string errorMessage;
+                    if (user.IsNewUser ?? false)
+                    {
+                        errorMessage = "Your account has been created and is waiting for admin approval. You will receive notification once approved.";
+                    }
+                    else if (user.RequestedAt != null && (DateTime.UtcNow - user.RequestedAt.Value).TotalMinutes < 5)
+                    {
+                        // If requested within last 5 minutes, treat as new request
+                        errorMessage = "Your account has been created and is waiting for admin approval. You will receive notification once approved.";
+                    }
+                    else
+                    {
+                        errorMessage = "Authentication failed: Your access request is pending admin approval. Please wait for approval notification.";
+                    }
+
+                    return new AuthResult
+                    {
+                        Success = false,
+                        ErrorMessage = errorMessage,
+                        RequiresApproval = true,
+                        RequestedAt = user.RequestedAt,
+                        User = MapToDto(user, new string[0])
+                    };
+                }
+
+                if (user.ApprovalStatus == "Rejected")
+                {
+                    _logger.LogWarning("Azure AD user rejected: {Username}", user.Username);
+                    return new AuthResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Access denied: Your access request has been rejected. Reason: {user.RejectionReason ?? "No reason provided"}",
+                        IsRejected = true,
+                        RejectionReason = user.RejectionReason
+                    };
+                }
+
                 var roles = await GetUserRolesAsync(user.Id);
                 _logger.LogInformation("User {Username} (ID: {Id}) has roles: {Roles}",
                     user.Username, user.Id, string.Join(", ", roles));
@@ -249,10 +320,12 @@ namespace API.Services
             await using var connection = new SqlConnection(_connectionString);
             
             var user = await connection.QuerySingleOrDefaultAsync<AuthUser>(
-                @"SELECT Id, Username, PasswordHash, PasswordSalt, DisplayName, Email, 
-                         JobTitle, Department, AuthProvider, AzureAdObjectId, IsActive, 
-                         CreatedOn, ModifiedOn
-                  FROM AuthUsers 
+                @"SELECT Id, Username, PasswordHash, PasswordSalt, DisplayName, Email,
+                         JobTitle, Department, AuthProvider, AzureAdObjectId, IsActive,
+                         CreatedOn, ModifiedOn, ApprovalStatus, RequestedAt, ApprovedAt,
+                         ApprovedBy, RejectedAt, RejectedBy, RejectionReason,
+                         LinkedBitbucketUserId, Notes, RequestReason, Team
+                  FROM AuthUsers
                   WHERE Username = @Username",
                 new { Username = username });
                 
@@ -264,10 +337,12 @@ namespace API.Services
             await using var connection = new SqlConnection(_connectionString);
             
             var user = await connection.QuerySingleOrDefaultAsync<AuthUser>(
-                @"SELECT Id, Username, PasswordHash, PasswordSalt, DisplayName, Email, 
-                         JobTitle, Department, AuthProvider, AzureAdObjectId, IsActive, 
-                         CreatedOn, ModifiedOn
-                  FROM AuthUsers 
+                @"SELECT Id, Username, PasswordHash, PasswordSalt, DisplayName, Email,
+                         JobTitle, Department, AuthProvider, AzureAdObjectId, IsActive,
+                         CreatedOn, ModifiedOn, ApprovalStatus, RequestedAt, ApprovedAt,
+                         ApprovedBy, RejectedAt, RejectedBy, RejectionReason,
+                         LinkedBitbucketUserId, Notes, RequestReason, Team
+                  FROM AuthUsers
                   WHERE AzureAdObjectId = @ObjectId",
                 new { ObjectId = objectId });
                 
@@ -281,7 +356,9 @@ namespace API.Services
             var user = await connection.QuerySingleOrDefaultAsync<AuthUser>(
                 @"SELECT Id, Username, PasswordHash, PasswordSalt, DisplayName, Email,
                          JobTitle, Department, AuthProvider, AzureAdObjectId, IsActive,
-                         CreatedOn, ModifiedOn
+                         CreatedOn, ModifiedOn, ApprovalStatus, RequestedAt, ApprovedAt,
+                         ApprovedBy, RejectedAt, RejectedBy, RejectionReason,
+                         LinkedBitbucketUserId, Notes, RequestReason, Team
                   FROM AuthUsers
                   WHERE Email = @Email",
                 new { Email = email });
@@ -296,7 +373,9 @@ namespace API.Services
             var user = await connection.QuerySingleOrDefaultAsync<AuthUser>(
                 @"SELECT Id, Username, PasswordHash, PasswordSalt, DisplayName, Email,
                          JobTitle, Department, AuthProvider, AzureAdObjectId, IsActive,
-                         CreatedOn, ModifiedOn
+                         CreatedOn, ModifiedOn, ApprovalStatus, RequestedAt, ApprovedAt,
+                         ApprovedBy, RejectedAt, RejectedBy, RejectionReason,
+                         LinkedBitbucketUserId, Notes, RequestReason, Team
                   FROM AuthUsers
                   WHERE Id = @Id",
                 new { Id = id });
@@ -307,10 +386,21 @@ namespace API.Services
         public async Task<AuthUser> CreateUserFromAzureAdAsync(CreateAzureAdUserRequest request)
         {
             await using var connection = new SqlConnection(_connectionString);
-            
+
+            // Check if auto-approval is enabled
+            var autoApprove = _configuration.GetValue<bool>("Authentication:AutoApproveNewUsers", false);
+            var approvalStatus = autoApprove ? "Approved" : "Pending";
+
             var userId = await connection.QuerySingleAsync<int>(
-                @"EXEC sp_CreateOrUpdateAzureAdUser 
-                    @AzureAdObjectId, @Username, @DisplayName, @Email, @JobTitle, @Department, @DefaultRole",
+                @"INSERT INTO AuthUsers
+                  (Username, PasswordHash, PasswordSalt, DisplayName, Email, JobTitle, Department,
+                   AuthProvider, AzureAdObjectId, IsActive, CreatedOn, ApprovalStatus, RequestedAt)
+                  VALUES
+                  (@Username, 0x00, 0x00, @DisplayName, @Email, @JobTitle, @Department,
+                   'AzureAd', @AzureAdObjectId, 1, GETUTCDATE(), @ApprovalStatus,
+                   CASE WHEN @ApprovalStatus = 'Pending' THEN GETUTCDATE() ELSE NULL END);
+
+                  SELECT CAST(SCOPE_IDENTITY() as int);",
                 new
                 {
                     AzureAdObjectId = request.AzureAdObjectId,
@@ -319,10 +409,19 @@ namespace API.Services
                     Email = request.Email,
                     JobTitle = request.JobTitle,
                     Department = request.Department,
-                    DefaultRole = request.DefaultRole
+                    ApprovalStatus = approvalStatus
                 });
-                
-            var user = await GetUserByAzureObjectIdAsync(request.AzureAdObjectId);
+
+            // If auto-approved, assign default role
+            if (autoApprove && !string.IsNullOrEmpty(request.DefaultRole))
+            {
+                await connection.ExecuteAsync(
+                    @"INSERT INTO AuthUserRoles (UserId, RoleId)
+                      SELECT @UserId, Id FROM AuthRoles WHERE Name = @RoleName",
+                    new { UserId = userId, RoleName = request.DefaultRole });
+            }
+
+            var user = await GetUserByIdAsync(userId);
             return user ?? throw new InvalidOperationException("Failed to create Azure AD user");
         }
         
@@ -434,10 +533,12 @@ namespace API.Services
                 await transaction.CommitAsync();
                 
                 var user = await connection.QuerySingleAsync<AuthUser>(
-                    @"SELECT Id, Username, PasswordHash, PasswordSalt, DisplayName, Email, 
-                             JobTitle, Department, AuthProvider, AzureAdObjectId, IsActive, 
-                             CreatedOn, ModifiedOn
-                      FROM AuthUsers 
+                    @"SELECT Id, Username, PasswordHash, PasswordSalt, DisplayName, Email,
+                             JobTitle, Department, AuthProvider, AzureAdObjectId, IsActive,
+                             CreatedOn, ModifiedOn, ApprovalStatus, RequestedAt, ApprovedAt,
+                             ApprovedBy, RejectedAt, RejectedBy, RejectionReason,
+                             LinkedBitbucketUserId, Notes, RequestReason, Team
+                      FROM AuthUsers
                       WHERE Id = @UserId",
                     new { UserId = userId });
                     
@@ -469,6 +570,8 @@ namespace API.Services
                 new Claim(JwtRegisteredClaimNames.Sub, user.Username),
                 new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
                 new Claim(ClaimTypes.Name, user.DisplayNameOrUsername),
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim("userId", user.Id.ToString()),
                 new Claim("auth_provider", user.AuthProvider)
             };
             

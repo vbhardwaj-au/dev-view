@@ -157,13 +157,15 @@
         if (!string.IsNullOrEmpty(errorParam))
         {
             Logger.LogWarning("Login page loaded with error: {Error}", errorParam);
+
+            // Check if it's a known error code or the actual error message
             error = errorParam switch
             {
                 "remote" => "Azure AD authentication failed. Please try again.",
                 "authfailed" => "Authentication failed. Please check your credentials.",
                 "notauthenticated" => "You are not authenticated. Please sign in.",
                 "callback" => "Error processing authentication. Please try again.",
-                _ => "An error occurred during sign-in."
+                _ => Uri.UnescapeDataString(errorParam) // Display the actual error message from the API
             };
         }
 

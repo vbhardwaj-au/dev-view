@@ -18,10 +18,20 @@
                     <i class="bi bi-person-gear me-2"></i>
                     User Management
                 </h1>
-                <button class="btn btn-success" @onclick="ShowCreateUserModal">
-                    <i class="bi bi-person-plus me-2"></i>
-                    Create New User
-                </button>
+                <div>
+                    <a href="/admin/user-approvals" class="btn btn-warning me-2">
+                        <i class="bi bi-person-check me-2"></i>
+                        Pending Approvals
+                        @if (pendingCount > 0)
+                        {
+                            <span class="badge bg-danger ms-1">@pendingCount</span>
+                        }
+                    </a>
+                    <button class="btn btn-success" @onclick="ShowCreateUserModal">
+                        <i class="bi bi-person-plus me-2"></i>
+                        Create New User
+                    </button>
+                </div>
             </div>
 
             @if (!string.IsNullOrEmpty(message))
@@ -59,6 +69,7 @@
                                         <th>Display Name</th>
                                         <th>Roles</th>
                                         <th>Status</th>
+                                        <th>Approval</th>
                                         <th>Created</th>
                                         <th>Modified</th>
                                         <th>Actions</th>
@@ -95,6 +106,23 @@
                                                 else
                                                 {
                                                     <span class="badge bg-danger">Blocked</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @switch (user.ApprovalStatus)
+                                                {
+                                                    case "Pending":
+                                                        <span class="badge bg-warning text-dark">Pending</span>
+                                                        break;
+                                                    case "Approved":
+                                                        <span class="badge bg-success">Approved</span>
+                                                        break;
+                                                    case "Rejected":
+                                                        <span class="badge bg-danger">Rejected</span>
+                                                        break;
+                                                    default:
+                                                        <span class="badge bg-success">Approved</span>
+                                                        break;
                                                 }
                                             </td>
                                             <td>
@@ -318,6 +346,7 @@
         public string Username { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public bool IsActive { get; set; }
+        public string ApprovalStatus { get; set; } = "Approved";
         public DateTime CreatedOn { get; set; }
         public DateTime? ModifiedOn { get; set; }
         public List<string> Roles { get; set; } = new();
@@ -345,6 +374,7 @@
     }
 
     private IEnumerable<AuthUserDto>? authUsers;
+    private int pendingCount = 0;
     private IEnumerable<string>? availableRoles;
     
     private CreateUserRequest newUser = new();
@@ -373,6 +403,7 @@
         try
         {
             authUsers = await Http.GetFromJsonAsync<IEnumerable<AuthUserDto>>("api/UserManagement");
+            pendingCount = authUsers?.Count(u => u.ApprovalStatus == "Pending") ?? 0;
         }
         catch (Exception ex)
         {

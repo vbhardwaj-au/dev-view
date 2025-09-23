@@ -29,6 +29,7 @@ namespace API.Endpoints.Auth
             public string Username { get; set; } = string.Empty;
             public string DisplayName { get; set; } = string.Empty;
             public bool IsActive { get; set; }
+            public string ApprovalStatus { get; set; } = "Approved";
             public DateTime CreatedOn { get; set; }
             public DateTime? ModifiedOn { get; set; }
             public List<string> Roles { get; set; } = new();
@@ -69,27 +70,33 @@ namespace API.Endpoints.Auth
                 
                 // Check which columns exist
                 var columns = await conn.QueryAsync<string>(
-                    @"SELECT COLUMN_NAME 
-                      FROM INFORMATION_SCHEMA.COLUMNS 
+                    @"SELECT COLUMN_NAME
+                      FROM INFORMATION_SCHEMA.COLUMNS
                       WHERE TABLE_NAME = 'AuthUsers'");
-                
+
                 var columnList = columns.ToList();
                 var hasCreatedOn = columnList.Contains("CreatedOn");
                 var hasModifiedOn = columnList.Contains("ModifiedOn");
-                
+                var hasApprovalStatus = columnList.Contains("ApprovalStatus");
+
                 // Build query based on available columns
                 var query = @"SELECT Id, Username, DisplayName, IsActive";
-                
+
+                if (hasApprovalStatus)
+                    query += ", ApprovalStatus";
+                else
+                    query += ", 'Approved' as ApprovalStatus";
+
                 if (hasCreatedOn)
                     query += ", CreatedOn";
                 else
                     query += ", GETUTCDATE() as CreatedOn";
-                    
+
                 if (hasModifiedOn)
                     query += ", ModifiedOn";
                 else
                     query += ", NULL as ModifiedOn";
-                    
+
                 query += " FROM AuthUsers ORDER BY Username";
                 
                 var users = await conn.QueryAsync<UserDto>(query);

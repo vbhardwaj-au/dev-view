@@ -54,6 +54,7 @@ CREATE DATABASE DevView;
 -- 2. API/SqlSchema/alter-auth.sql
 -- 3. API/SqlSchema/seed-auth.sql
 -- 4. API/SqlSchema/migrations-azure-ad.sql (for Azure AD)
+-- 5. API/SqlSchema/user-approval-migration.sql (for approval system)
 ```
 
 ### Publishing
@@ -73,8 +74,8 @@ cd AutoSync && dotnet publish -c Release -o ./publish
 ### API Layer (API project)
 - **Port**: 5000 (HTTP), 5001 (HTTPS)
 - **Authentication**: JWT Bearer tokens with optional Azure AD integration
-- **Endpoints**: Analytics, Commits, PullRequests, Sync, Teams, Auth, UserDashboard
-- **Services**: AnalyticsService, CommitAnalysisService, PullRequestAnalysisService, AuthenticationService
+- **Endpoints**: Analytics, Commits, PullRequests, Sync, Teams, Auth, UserDashboard, ApprovalEndpoints, NotificationEndpoints
+- **Services**: AnalyticsService, CommitAnalysisService, PullRequestAnalysisService, AuthenticationService, UserApprovalService, NotificationService
 - **Swagger**: Available at http://localhost:5000/swagger
 - **CORS**: Configured for ports 5084 and 7051
 
@@ -82,14 +83,14 @@ cd AutoSync && dotnet publish -c Release -o ./publish
 - **Port**: 5084 (HTTP), 7051 (HTTPS)
 - **Framework**: Blazor Server with InteractiveServer render mode
 - **Authentication**: JWT-based with cookie auth for server-side, Azure AD support
-- **Key Pages**: Dashboard, UserDashboard, Commits, PullRequests, TopCommitters, PrDashboard, Teams, Login
+- **Key Pages**: Dashboard, UserDashboard, Commits, PullRequests, TopCommitters, PrDashboard, Teams, Login, UserApprovals, PendingApproval, RequestAccess
 - **Services**: AuthService, HybridAuthService, WorkspaceService, BitbucketUrlService
 - **JavaScript**: Chart integration (wwwroot/js/), auth helpers
 
 ### Data Layer (Data project)
 - **ORM**: Dapper with SQL Server
-- **Models**: Commit, CommitFile, PullRequest, SyncSettings, Team, TeamMember, AuthUser
-- **Repositories**: CommitRepository, PullRequestRepository
+- **Models**: Commit, CommitFile, PullRequest, SyncSettings, Team, TeamMember, AuthUser, User, NotificationConfig
+- **Repositories**: CommitRepository, PullRequestRepository, AuthRepository, UserRepository, NotificationRepository
 - **Shared between**: API and AutoSync projects
 - **Command timeout**: 5 minutes for long-running operations
 
@@ -126,7 +127,9 @@ cd AutoSync && dotnet publish -c Release -o ./publish
   "Authentication": {
     "DefaultProvider": "Database",
     "AllowFallback": true,
-    "AutoCreateUsers": true
+    "AutoCreateUsers": true,
+    "AutoApproveNewUsers": false,
+    "RequireApprovalForNewUsers": true
   }
 }
 ```
@@ -134,6 +137,7 @@ cd AutoSync && dotnet publish -c Release -o ./publish
 ### Web/appsettings.json
 - ApiBaseUrl (default: http://localhost:5000)
 - AzureAd configuration (matching API settings)
+- Authentication settings for approval workflow
 
 ### AutoSync/appsettings.json
 - Same database and Bitbucket settings as API
@@ -141,7 +145,7 @@ cd AutoSync && dotnet publish -c Release -o ./publish
 
 ## Database Schema
 Main tables:
-- **AuthUsers** - Authentication users with roles (Admin, Manager, User)
+- **AuthUsers** - Authentication users with roles and approval status (Admin, Manager, User)
 - **Users** - Bitbucket users with avatar support
 - **Repositories** - Repository metadata with ExcludeFromReporting flag
 - **Commits** - Commit data with lines added/removed
@@ -149,8 +153,9 @@ Main tables:
 - **PullRequests** - PR metadata and metrics
 - **Teams** - Team organization
 - **TeamMembers** - Team membership
+- **NotificationConfigs** - Email notification settings
 
-## Authentication Flow
+## Authentication & User Approval Flow
 
 ### Database Authentication (Default)
 1. User logs in via /login page with username/password
@@ -159,18 +164,27 @@ Main tables:
 4. BearerHandler adds token to API requests
 5. Server-side cookie auth for Blazor components
 
-### Azure AD Authentication (Optional)
+### Azure AD Authentication with Approval
 1. User clicks "Sign in with Microsoft" on /login
 2. Redirects to Azure AD for authentication
 3. Returns with OIDC token
-4. User auto-created in AuthUsers table if new
-5. JWT token generated for API access
+4. New users created with "Pending" approval status
+5. Redirects to /request-access for additional info
+6. Admin approves via /admin/user-approvals
+7. JWT token generated for API access after approval
 
 ### JWT Token Management
 - Token stored in localStorage as 'jwtToken'
 - Automatic token refresh before expiration
 - Token added to API requests via Authorization header
 - Expiration: 30 days (configurable in appsettings.json)
+
+### User Approval System
+- New users default to "Pending" status
+- Access request page at /request-access
+- Pending status page at /pending-approval
+- Admin approval page at /admin/user-approvals
+- Email notifications for approval workflow (optional)
 
 ## Sync Modes
 - **Full Sync**: Historical data in configurable batches (default 10 days)
@@ -179,9 +193,10 @@ Main tables:
 - **Selective Sync**: Choose what to sync (users, repositories, commits, PRs)
 
 ## Role-Based Access Control
-- **Admin**: Full system access, user management, all settings, can modify file classifications
+- **Admin**: Full system access, user management, all settings, can modify file classifications, approve users
 - **Manager**: Team management, elevated analytics access
 - **User**: Standard access to dashboards and personal analytics, read-only file classification
+- **Pending**: Limited access, must be approved by admin
 
 ## Timezone Handling
 - Default timezone: "AUS Eastern Standard Time"
@@ -197,6 +212,7 @@ Main tables:
 - JWT tokens expire after 30 days
 - CORS configured for specific ports - update if changing ports
 - File classification is automatic with admin-only modification rights
+- User approval system requires admin action for new users
 
 ## Testing & Quality Checks
 
@@ -231,6 +247,20 @@ dotnet restore
 - Get user claims: `AuthService.GetUserClaims()` returns username, userId, role
 - Admin-only features: Check `role == "Admin"` in authorization logic
 - Azure AD testing: Set `AzureAd:Enabled` to `true` in appsettings.json
+- Approval testing: New users start with `ApprovalStatus = "Pending"`
+
+### Testing User Approval Flow
+```sql
+-- Check pending users
+SELECT Id, Username, Email, ApprovalStatus, RequestedAt
+FROM AuthUsers
+WHERE ApprovalStatus = 'Pending';
+
+-- Manually approve user (for testing)
+UPDATE AuthUsers
+SET ApprovalStatus = 'Approved', ApprovedAt = GETUTCDATE()
+WHERE Username = 'testuser';
+```
 
 ### Debugging Sync Issues
 - Check AutoSync logs in console output

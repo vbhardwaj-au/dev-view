@@ -74,6 +74,12 @@ namespace Entities.DTOs.Auth
         public string? RedirectUrl { get; set; }
         public string? ErrorMessage { get; set; }
         public AuthUserDto? User { get; set; }
+
+        // Approval workflow properties
+        public bool RequiresApproval { get; set; }
+        public DateTime? RequestedAt { get; set; }
+        public bool IsRejected { get; set; }
+        public string? RejectionReason { get; set; }
     }
     
     public class AuthenticationConfig

@@ -7,8 +7,8 @@
 @inject NavigationManager Navigation
 @inject ILogger<ProcessAuth> Logger
 @inject IJSRuntime JS
+@inject IHttpContextAccessor HttpContextAccessor
 @rendermode InteractiveServer
-@implements IDisposable
 
 <div class="container mt-5 text-center">
     <h3>Processing authentication...</h3>
@@ -20,134 +20,105 @@
 
 @code {
     private string statusMessage = "Please wait while we complete your sign-in.";
-    private bool isProcessing = false;
-    private bool isDisposed = false;
+    private static bool isProcessing = false; // Static to prevent re-entry
+    private bool hasNavigated = false;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && !isProcessing)
+        if (firstRender && !isProcessing && !hasNavigated)
         {
             isProcessing = true;
-            await ProcessAuthentication();
+            try
+            {
+                await ProcessAuthentication();
+            }
+            finally
+            {
+                isProcessing = false;
+            }
         }
-    }
-
-    public void Dispose()
-    {
-        isDisposed = true;
     }
 
     private async Task ProcessAuthentication()
     {
         try
         {
-            Logger.LogInformation("ProcessAuth: Starting authentication processing");
+            Logger.LogInformation("[ProcessAuth] Starting authentication processing");
             statusMessage = "Verifying your identity...";
             StateHasChanged();
 
-            // Get the authenticated user from the authentication state
+            // First check if we already have a JWT token (already authenticated)
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
             var user = authState.User;
 
-            Logger.LogInformation("ProcessAuth: AuthState retrieved. IsAuthenticated: {IsAuth}, Name: {Name}, AuthType: {AuthType}",
-                user?.Identity?.IsAuthenticated,
-                user?.Identity?.Name,
-                user?.Identity?.AuthenticationType);
-
-            // Log all claims
-            if (user?.Claims != null)
+            if (user?.Identity?.IsAuthenticated == true &&
+                (user.Identity.AuthenticationType == "JwtAuth" || user.Claims.Any(c => c.Type == ClaimTypes.Role)))
             {
-                foreach (var claim in user.Claims)
-                {
-                    Logger.LogInformation("Claim: {Type} = {Value}", claim.Type, claim.Value);
-                }
+                Logger.LogInformation("[ProcessAuth] User already authenticated with JWT, redirecting to dashboard");
+                hasNavigated = true;
+                await JS.InvokeVoidAsync("eval", "window.location.href = '/dashboard'");
+                return;
             }
 
-            if (user?.Identity?.IsAuthenticated == true)
+            // Check the HTTP context for Azure AD cookie authentication
+            var httpContext = HttpContextAccessor.HttpContext;
+            var cookieUser = httpContext?.User;
+
+            Logger.LogInformation("[ProcessAuth] Checking for Azure AD cookie authentication");
+            Logger.LogInformation("[ProcessAuth] Cookie user authenticated: {Auth}", cookieUser?.Identity?.IsAuthenticated);
+
+            if (cookieUser?.Identity?.IsAuthenticated == true)
             {
-                // Check if this is already a JWT-authenticated user (already processed)
-                if (user.Identity.AuthenticationType == "JwtAuth" ||
-                    user.Claims.Any(c => c.Type == ClaimTypes.Role))
-                {
-                    Logger.LogInformation("ProcessAuth: User already authenticated with JWT - {Name}", user.Identity.Name);
-                    statusMessage = "Already authenticated. Redirecting to dashboard...";
-                    StateHasChanged();
-
-                    await Task.Delay(500);
-
-                    // Check if component is still active before navigation
-                    if (!isDisposed)
-                    {
-                        Navigation.NavigateTo("/dashboard", forceLoad: true);
-                    }
-                    return;
-                }
-
-                Logger.LogInformation("ProcessAuth: User authenticated via Azure AD - {Name}", user.Identity.Name);
-                statusMessage = "Creating your session...";
+                Logger.LogInformation("[ProcessAuth] Azure AD cookie authentication detected for user: {Name}",
+                    cookieUser.Identity.Name ?? cookieUser.FindFirst("preferred_username")?.Value);
+                statusMessage = "Processing your Azure AD authentication...";
                 StateHasChanged();
 
                 // Process the Azure AD user through the hybrid auth service
-                // This will call the API to create/update user and generate JWT token
-                var result = await HybridAuth.HandleAzureCallbackAsync(user);
+                var result = await HybridAuth.HandleAzureCallbackAsync(cookieUser);
 
                 if (result.Success)
                 {
-                    Logger.LogInformation("ProcessAuth: Azure AD authentication successful, token generated");
+                    Logger.LogInformation("[ProcessAuth] Authentication successful, token generated");
                     statusMessage = "Success! Redirecting to dashboard...";
                     StateHasChanged();
 
-                    await Task.Delay(500); // Brief delay to show success message
-
-                    // Check if component is still active before navigation
-                    if (!isDisposed)
-                    {
-                        Navigation.NavigateTo("/dashboard", forceLoad: true);
-                    }
+                    await Task.Delay(500);
+                    hasNavigated = true;
+                    await JS.InvokeVoidAsync("eval", "window.location.href = '/dashboard'");
                 }
                 else
                 {
-                    Logger.LogWarning("ProcessAuth: Azure AD authentication failed - {Error}", result.ErrorMessage);
+                    Logger.LogWarning("[ProcessAuth] Authentication failed - {Error}", result.ErrorMessage);
                     statusMessage = $"Authentication failed: {result.ErrorMessage}";
                     StateHasChanged();
 
                     await Task.Delay(2000);
-
-                    // Check if component is still active before navigation
-                    if (!isDisposed)
-                    {
-                        var errorParam = Uri.EscapeDataString(result.ErrorMessage ?? "Authentication failed");
-                        Navigation.NavigateTo($"/login?error={errorParam}", forceLoad: true);
-                    }
+                    hasNavigated = true;
+                    var errorParam = Uri.EscapeDataString(result.ErrorMessage ?? "Authentication failed");
+                    await JS.InvokeVoidAsync("eval", $"window.location.href = '/login?error={errorParam}'");
                 }
             }
             else
             {
-                Logger.LogWarning("ProcessAuth: No authenticated user found");
+                Logger.LogWarning("[ProcessAuth] No authenticated user found");
                 statusMessage = "No authenticated user found. Redirecting to login...";
                 StateHasChanged();
 
                 await Task.Delay(1000);
-
-                // Check if component is still active before navigation
-                if (!isDisposed)
-                {
-                    Navigation.NavigateTo("/login?error=notauthenticated", forceLoad: true);
-                }
+                hasNavigated = true;
+                await JS.InvokeVoidAsync("eval", "window.location.href = '/login?error=notauthenticated'");
             }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "ProcessAuth: Error processing authentication");
+            Logger.LogError(ex, "[ProcessAuth] Error processing authentication");
             statusMessage = $"Error: {ex.Message}";
+            StateHasChanged();
 
-            // Only update UI if component is still active
-            if (!isDisposed)
-            {
-                StateHasChanged();
-                await Task.Delay(2000);
-                Navigation.NavigateTo("/login?error=callback", forceLoad: true);
-            }
+            await Task.Delay(2000);
+            hasNavigated = true;
+            await JS.InvokeVoidAsync("eval", "window.location.href = '/login?error=callback'");
         }
     }
 }
